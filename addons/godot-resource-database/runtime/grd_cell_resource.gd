@@ -1,0 +1,2 @@
+class_name GRDCellResource
+extends Resource

@@ -1,0 +1,8 @@
+# Normalize EOL for all files that Git considers text files.
+* text=auto eol=lf
+
+# Export-ignore: only addons/** and LICENSE ship in AssetLib zip
+* export-ignore
+/addons/** -export-ignore
+/addons/godot-resource-database/tests/** export-ignore
+/LICENSE -export-ignore

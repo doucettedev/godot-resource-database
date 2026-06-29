@@ -1,0 +1,9 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# Generated metadata and caches
+*.uid
+*.import
+global_script_class_cache.cfg
+uid_cache.bin
