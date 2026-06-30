@@ -1,0 +1,34 @@
+name: Update addon-only branch
+
+on:
+  push:
+    branches:
+      - "**"
+      - "!addon-only/**"
+    paths:
+      - "addons/godot-resource-database/**"
+      - ".github/workflows/addon-only.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-addon-only:
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate addon-only branch for current branch
+        run: |
+          set -euo pipefail
+
+          src_branch="${GITHUB_REF_NAME}"
+          dst_branch="addon-only/${src_branch}"
+
+          split_sha="$(git subtree split --prefix=addons/godot-resource-database HEAD)"
+
+          git push origin "${split_sha}:refs/heads/${dst_branch}" --force-with-lease
