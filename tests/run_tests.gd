@@ -81,6 +81,7 @@ func _run_all_tests() -> void:
 	_test_table_asset_get_property_columns()
 	_test_table_asset_validate_row_types()
 	_test_table_asset_is_resource_first()
+	_test_csharp_constants_generation()
 
 	# --- Typed row database ---
 	_test_typed_row_database_load()
@@ -782,6 +783,36 @@ func _test_table_asset_is_resource_first() -> void:
 	_assert(ta.is_resource_first(), "row_script set = resource_first")
 	ta.row_script = null
 	_assert(not ta.is_resource_first(), "no row_script = not resource_first")
+
+
+func _test_csharp_constants_generation() -> void:
+	print("\n[C# constants generation]")
+	var db_asset := GRDDatabaseAsset.new()
+	var table := GRDTableAsset.new()
+	table.table_name = &"items"
+	table.id_field = &"id"
+	table.row_script = TypedTestRow.new().get_script()
+
+	var sword := TypedTestRow.new()
+	sword.id = &"sword"
+	sword.name = "Sword"
+	var bad_id := TypedTestRow.new()
+	bad_id.id = &"1-sword"
+	bad_id.name = "Sanitized"
+	table.rows = [sword, bad_id]
+	db_asset.tables = [table]
+
+	var source := GRDEditorPanel._build_csharp_constants_source(db_asset, "res://database/database.tres")
+	_assert(source.contains("using Godot;"), "C# output imports Godot")
+	_assert(source.contains("public static partial class Database"), "C# output declares Database partial class")
+	_assert(source.contains("public static class Items"), "C# output declares nested table class")
+	_assert(source.contains("public static readonly StringName TABLE = \"items\";"), "C# output declares TABLE")
+	_assert(source.contains("public static readonly StringName ID_FIELD = \"id\";"), "C# output declares ID_FIELD")
+	_assert(source.contains("public static readonly StringName NAME = \"name\";"), "C# output declares column constant")
+	_assert(source.contains("public static class Id"), "C# output declares Id class")
+	_assert(source.contains("public static readonly StringName SWORD = \"sword\";"), "C# output declares row ID constant")
+	_assert(source.contains("public static readonly StringName ID_1_SWORD = \"1-sword\";"), "C# output sanitizes invalid row ID")
+	_assert(source.contains("// Identifier sanitized from \"1-sword\"."), "C# output comments sanitized identifiers")
 
 
 # ===========================================================================

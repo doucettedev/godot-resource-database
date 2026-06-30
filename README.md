@@ -84,6 +84,16 @@ The generated script includes:
 - `raw`, the loaded `GRDDatabase`
 - `table(name)`, a shortcut for `raw.get_table(name)`
 
+For C# projects, also run **More > Generate C# constants**. For `res://database/database.tres`, this writes `res://database/Database.Generated.cs` beside the asset and refreshes the GDScript bridge it calls. The generated C# file contains typed `StringName` constants and a small runtime bridge that keeps dynamic GDScript calls in one place:
+
+```csharp
+using Game.Database;
+
+var items = Database.Table(Database.Items.TABLE);
+var sword = Database.Row(Database.Items.TABLE, Database.Items.Id.SWORD);
+var name = sword.Call("get_string", Database.Items.NAME, "").AsString();
+```
+
 You can also load a database manually when you need a different asset at runtime:
 
 ```gdscript
