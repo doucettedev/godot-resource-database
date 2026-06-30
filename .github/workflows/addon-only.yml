@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   update-addon-only:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
 
     steps:
       - uses: actions/checkout@v4
