@@ -72,7 +72,27 @@ const _MENU_ADD_TABLE: int = 3
 const _MENU_EDIT_TABLE: int = 4
 const _MENU_DELETE_TABLE: int = 5
 const _MENU_GENERATE_CONSTANTS: int = 6
-const _MENU_VALIDATE: int = 7
+const _MENU_GENERATE_CSHARP_CONSTANTS: int = 7
+const _MENU_VALIDATE: int = 8
+
+const _CSHARP_KEYWORDS := {
+	"abstract": true, "as": true, "base": true, "bool": true, "break": true,
+	"byte": true, "case": true, "catch": true, "char": true, "checked": true,
+	"class": true, "const": true, "continue": true, "decimal": true, "default": true,
+	"delegate": true, "do": true, "double": true, "else": true, "enum": true,
+	"event": true, "explicit": true, "extern": true, "false": true, "finally": true,
+	"fixed": true, "float": true, "for": true, "foreach": true, "goto": true,
+	"if": true, "implicit": true, "in": true, "int": true, "interface": true,
+	"internal": true, "is": true, "lock": true, "long": true, "namespace": true,
+	"new": true, "null": true, "object": true, "operator": true, "out": true,
+	"override": true, "params": true, "private": true, "protected": true, "public": true,
+	"readonly": true, "ref": true, "return": true, "sbyte": true, "sealed": true,
+	"short": true, "sizeof": true, "stackalloc": true, "static": true, "string": true,
+	"struct": true, "switch": true, "this": true, "throw": true, "true": true,
+	"try": true, "typeof": true, "uint": true, "ulong": true, "unchecked": true,
+	"unsafe": true, "ushort": true, "using": true, "virtual": true, "void": true,
+	"volatile": true, "while": true
+}
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +180,7 @@ func _build_ui() -> void:
 	popup.add_item("Delete table", _MENU_DELETE_TABLE)
 	popup.add_separator()
 	popup.add_item("Generate GDScript constants", _MENU_GENERATE_CONSTANTS)
+	popup.add_item("Generate C# constants", _MENU_GENERATE_CSHARP_CONSTANTS)
 	popup.add_item("Validate", _MENU_VALIDATE)
 	popup.id_pressed.connect(_on_actions_menu_id_pressed)
 	GRDTheme.style_popup_menu(popup)
@@ -730,6 +751,8 @@ func _on_actions_menu_id_pressed(id: int) -> void:
 			_on_delete_table_pressed()
 		_MENU_GENERATE_CONSTANTS:
 			_on_generate_constants_pressed()
+		_MENU_GENERATE_CSHARP_CONSTANTS:
+			_on_generate_csharp_constants_pressed()
 		_MENU_VALIDATE:
 			_on_validate_pressed()
 
@@ -1350,6 +1373,30 @@ func _on_generate_constants_pressed() -> void:
 	_set_status("Generated constants: %s" % out_path, false)
 
 
+func _on_generate_csharp_constants_pressed() -> void:
+	if _db_asset == null or _db_asset_path.is_empty():
+		_set_status("No database loaded.", true)
+		return
+
+	var gd_path := _db_asset_path.get_basename() + ".gd"
+	var gd_file := FileAccess.open(gd_path, FileAccess.WRITE)
+	if gd_file == null:
+		_set_status("Failed to write GDScript bridge target: %s" % gd_path, true)
+		return
+	gd_file.store_string(_build_constants_source(_db_asset, _db_asset_path))
+
+	var out_path := _db_asset_path.get_base_dir().path_join("Database.Generated.cs")
+	var source := _build_csharp_constants_source(_db_asset, _db_asset_path)
+	var file := FileAccess.open(out_path, FileAccess.WRITE)
+	if file == null:
+		_set_status("Failed to write C# constants: %s" % out_path, true)
+		return
+
+	file.store_string(source)
+	EditorInterface.get_resource_filesystem().scan()
+	_set_status("Generated C# constants: %s" % out_path, false)
+
+
 static func _build_constants_source(db_asset: GRDDatabaseAsset, db_path: String) -> String:
 	var generated_class_name := _script_class_name_from_path(db_path)
 	var lines := PackedStringArray()
@@ -1414,6 +1461,87 @@ static func _build_constants_source(db_asset: GRDDatabaseAsset, db_path: String)
 	return "\n".join(lines)
 
 
+static func _build_csharp_constants_source(db_asset: GRDDatabaseAsset, db_path: String) -> String:
+	var lines := PackedStringArray()
+	var used_table_classes := {
+		"Database": true,
+		"Row": true,
+		"Script": true,
+		"Table": true,
+	}
+
+	lines.append("// Generated from %s. Do not edit by hand." % db_path)
+	lines.append("using Godot;")
+	lines.append("")
+	lines.append("namespace Game.Database;")
+	lines.append("")
+	lines.append("public static partial class Database")
+	lines.append("{")
+
+	for table: GRDTableAsset in db_asset.tables:
+		if table == null or table.table_name == &"":
+			continue
+
+		var table_result := _csharp_unique_identifier(
+			_csharp_pascal_identifier(String(table.table_name), "Table"),
+			used_table_classes,
+		)
+		var table_class: String = table_result["name"]
+		var used_constants := {
+			"TABLE": true,
+			"ID_FIELD": true,
+			"Id": true,
+		}
+		var id_constants := _csharp_row_id_constants(table)
+
+		if table_result["sanitized"]:
+			lines.append("    // Identifier sanitized from \"%s\"." % _csharp_escape_string(String(table.table_name)))
+		lines.append("    public static class %s" % table_class)
+		lines.append("    {")
+		lines.append("        public static readonly StringName TABLE = \"%s\";" % _csharp_escape_string(String(table.table_name)))
+		lines.append("        public static readonly StringName ID_FIELD = \"%s\";" % _csharp_escape_string(String(table.get_id_field())))
+
+		for column: GRDPropertyColumn in table.get_property_columns():
+			if column == null or column.name == &"":
+				continue
+			var column_result := _csharp_unique_identifier(
+				_csharp_constant_identifier(String(column.name), "COLUMN"),
+				used_constants,
+			)
+			if column_result["sanitized"]:
+				lines.append("        // Identifier sanitized from \"%s\"." % _csharp_escape_string(String(column.name)))
+			lines.append("        public static readonly StringName %s = \"%s\";" % [column_result["name"], _csharp_escape_string(String(column.name))])
+
+		if not id_constants.is_empty():
+			lines.append("")
+			lines.append("        public static class Id")
+			lines.append("        {")
+			for item: Dictionary in id_constants:
+				if item["sanitized"]:
+					lines.append("            // Identifier sanitized from \"%s\"." % _csharp_escape_string(item["value"]))
+				lines.append("            public static readonly StringName %s = \"%s\";" % [item["name"], _csharp_escape_string(item["value"])])
+			lines.append("        }")
+
+		lines.append("    }")
+		lines.append("")
+
+	lines.append("    private static readonly GDScript Script =")
+	lines.append("        GD.Load<GDScript>(\"%s\");" % _csharp_escape_string(db_path.get_basename() + ".gd"))
+	lines.append("")
+	lines.append("    public static GodotObject Table(StringName name)")
+	lines.append("    {")
+	lines.append("        return Script.Call(\"table\", name).AsGodotObject();")
+	lines.append("    }")
+	lines.append("")
+	lines.append("    public static GodotObject Row(StringName table, StringName id)")
+	lines.append("    {")
+	lines.append("        return Table(table).Call(\"get_row\", id).AsGodotObject();")
+	lines.append("    }")
+	lines.append("}")
+
+	return "\n".join(lines) + "\n"
+
+
 static func _row_id_constants(table: GRDTableAsset) -> Dictionary:
 	var result := {}
 	var used := {}
@@ -1429,6 +1557,26 @@ static func _row_id_constants(table: GRDTableAsset) -> Dictionary:
 			continue
 		var constant_name := _unique_identifier(_constant_identifier(String(id_value), "ID"), used)
 		result[constant_name] = String(id_value)
+	return result
+
+
+static func _csharp_row_id_constants(table: GRDTableAsset) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var used := {}
+	var id_field := String(table.get_id_field())
+	if id_field.is_empty():
+		return result
+
+	for row in table.rows:
+		if row == null:
+			continue
+		var id_value: Variant = row.get(id_field)
+		if id_value == null or String(id_value).is_empty():
+			continue
+		var id_string := String(id_value)
+		var item := _csharp_unique_identifier(_csharp_constant_identifier(id_string, "ID"), used)
+		item["value"] = id_string
+		result.append(item)
 	return result
 
 
@@ -1449,6 +1597,15 @@ static func _pascal_identifier(value: String, fallback: String) -> String:
 	return result
 
 
+static func _csharp_pascal_identifier(value: String, fallback: String) -> Dictionary:
+	var name := _pascal_identifier(value, fallback)
+	var sanitized := _csharp_source_needs_comment(value)
+	if _is_csharp_keyword(name):
+		name += "_"
+		sanitized = true
+	return {"name": name, "sanitized": sanitized}
+
+
 static func _constant_identifier(value: String, fallback: String) -> String:
 	var words := _identifier_words(value)
 	if words.is_empty():
@@ -1458,6 +1615,15 @@ static func _constant_identifier(value: String, fallback: String) -> String:
 	if _starts_with_digit(result):
 		result = fallback + "_" + result
 	return result
+
+
+static func _csharp_constant_identifier(value: String, fallback: String) -> Dictionary:
+	var name := _constant_identifier(value, fallback)
+	var sanitized := _csharp_source_needs_comment(value)
+	if _is_csharp_keyword(name):
+		name += "_"
+		sanitized = true
+	return {"name": name, "sanitized": sanitized}
 
 
 static func _identifier_words(value: String) -> PackedStringArray:
@@ -1500,7 +1666,38 @@ static func _unique_identifier(base: String, used: Dictionary) -> String:
 	return candidate
 
 
+static func _csharp_unique_identifier(base_result: Dictionary, used: Dictionary) -> Dictionary:
+	var base: String = base_result["name"]
+	var candidate := base
+	var index := 2
+	var sanitized: bool = base_result["sanitized"]
+	while used.has(candidate):
+		candidate = "%s_%d" % [base, index]
+		index += 1
+		sanitized = true
+	used[candidate] = true
+	return {"name": candidate, "sanitized": sanitized}
+
+
+static func _is_csharp_keyword(value: String) -> bool:
+	return _CSHARP_KEYWORDS.has(value)
+
+
+static func _csharp_source_needs_comment(value: String) -> bool:
+	if value.is_empty() or _starts_with_digit(value):
+		return true
+	for i in value.length():
+		var ch := value.substr(i, 1)
+		if not (_is_identifier_char(ch) or ch == "_"):
+			return true
+	return _is_csharp_keyword(value)
+
+
 static func _escape_string(value: String) -> String:
+	return value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+
+static func _csharp_escape_string(value: String) -> String:
 	return value.replace("\\", "\\\\").replace("\"", "\\\"")
 
 
