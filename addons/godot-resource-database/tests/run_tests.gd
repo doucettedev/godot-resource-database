@@ -8,10 +8,10 @@
 ##   - Runtime GRDTable queries, indexes, and row access
 ##   - Runtime GRDQuery fluent builder
 ##   - Runtime GRDDatabase load and validation
-##   - GRDPropertyColumn helpers
+##   - GRDColumn helpers
 ##   - GRDTableAsset helpers
-##   - GRDDatabaseIssue.format()
-##   - GRDResourceCellEditorFactory basic create
+##   - GRDValidationIssue.format()
+##   - GRDCellEditorFactory basic create
 
 extends SceneTree
 
@@ -65,7 +65,7 @@ func _run_all_tests() -> void:
 	_test_database_dynamic_access()
 	_test_database_load_from_path_not_found()
 
-	# --- GRDPropertyColumn ---
+	# --- GRDColumn ---
 	_test_property_column_from_script()
 	_test_property_column_from_resource()
 	_test_property_column_filters()
@@ -89,12 +89,12 @@ func _run_all_tests() -> void:
 	_test_typed_row_query_fluent()
 	_test_typed_row_database_validation()
 	_test_typed_row_database_create_and_query()
-	_test_database_row_script_not_resource()
+	_test_database_schema_not_resource()
 
-	# --- GRDDatabaseIssue ---
+	# --- GRDValidationIssue ---
 	_test_issue_format()
 
-	# --- GRDResourceCellEditorFactory ---
+	# --- GRDCellEditorFactory ---
 	_test_resource_cell_editor_scalar()
 	_test_resource_cell_editor_bool()
 	_test_resource_cell_editor_enum()
@@ -138,7 +138,7 @@ func _make_simple_db() -> GRDDatabase:
 	var table := GRDTableAsset.new()
 	table.table_name = &"items"
 	table.id_field = &"id"
-	table.row_script = TypedTestRow.new().get_script()
+	table.schema = TypedTestRow.new().get_script()
 
 	var row1 := TypedTestRow.new()
 	row1.id = &"a"
@@ -341,7 +341,7 @@ func _test_table_eager_index() -> void:
 	var t_asset := GRDTableAsset.new()
 	t_asset.table_name = &"eager_t"
 	t_asset.id_field = &"id"
-	t_asset.row_script = TypedTestRow.new().get_script()
+	t_asset.schema = TypedTestRow.new().get_script()
 	var r := t_asset.create_row()
 	if r is TypedTestRow:
 		(r as TypedTestRow).id = &"r1"
@@ -482,7 +482,7 @@ func _test_database_validation_missing_id() -> void:
 	var t := GRDTableAsset.new()
 	t.table_name = &"test"
 	t.id_field = &"id"
-	t.row_script = TypedTestRow.new().get_script()
+	t.schema = TypedTestRow.new().get_script()
 	var r := t.create_row()
 	# Leave id empty to trigger missing_id.
 	t.rows = [r]
@@ -505,7 +505,7 @@ func _test_database_validation_duplicate_id() -> void:
 	var t := GRDTableAsset.new()
 	t.table_name = &"test"
 	t.id_field = &"id"
-	t.row_script = TypedTestRow.new().get_script()
+	t.schema = TypedTestRow.new().get_script()
 	var r1 := t.create_row()
 	if r1 is TypedTestRow:
 		(r1 as TypedTestRow).id = &"dup"
@@ -562,12 +562,12 @@ func _test_database_load_from_path_not_found() -> void:
 
 
 # ===========================================================================
-# GRDPropertyColumn tests
+# GRDColumn tests
 # ===========================================================================
 
 func _test_property_column_from_script() -> void:
 	print("\n[PropertyColumn from_script]")
-	var cols := GRDPropertyColumn.from_script(TypedTestRow.new().get_script())
+	var cols := GRDColumn.from_script(TypedTestRow.new().get_script())
 	_assert(cols.size() > 0, "from_script returns columns")
 	var names: Array[StringName] = []
 	for c in cols:
@@ -590,7 +590,7 @@ func _test_property_column_from_resource() -> void:
 	var row := TypedTestRow.new()
 	row.id = &"test"
 	row.name = "Test Row"
-	var cols := GRDPropertyColumn.from_resource(row)
+	var cols := GRDColumn.from_resource(row)
 	_assert(cols.size() > 0, "from_resource returns columns")
 	var names: Array[StringName] = []
 	for c in cols:
@@ -601,7 +601,7 @@ func _test_property_column_from_resource() -> void:
 
 func _test_property_column_filters() -> void:
 	print("\n[PropertyColumn filters]")
-	var cols := GRDPropertyColumn.from_script(TypedTestRow.new().get_script())
+	var cols := GRDColumn.from_script(TypedTestRow.new().get_script())
 	for c in cols:
 		_assert(c.is_exported, "Column '%s' is_exported" % c.name)
 		_assert((c.usage & PROPERTY_USAGE_STORAGE) != 0, "Column '%s' has STORAGE" % c.name)
@@ -617,39 +617,39 @@ func _test_property_column_filters() -> void:
 
 func _test_property_column_helpers_scalar() -> void:
 	print("\n[PropertyColumn helpers: scalar]")
-	var cols := GRDPropertyColumn.from_script(TypedTestRow.new().get_script())
+	var cols := GRDColumn.from_script(TypedTestRow.new().get_script())
 	var col_map: Dictionary = {}
 	for c in cols:
 		col_map[c.name] = c
 
-	var id_col: GRDPropertyColumn = col_map[&"id"]
+	var id_col: GRDColumn = col_map[&"id"]
 	_assert(id_col.is_scalar(), "id is_scalar")
 	_assert(id_col.is_string_like(), "id is_string_like")
 	_assert(not id_col.is_numeric(), "id not is_numeric")
 
-	var hp_col: GRDPropertyColumn = col_map[&"hp"]
+	var hp_col: GRDColumn = col_map[&"hp"]
 	_assert(hp_col.is_scalar(), "hp is_scalar")
 	_assert(hp_col.is_numeric(), "hp is_numeric")
 	_assert(not hp_col.is_string_like(), "hp not is_string_like")
 
-	var bool_col: GRDPropertyColumn = col_map[&"is_active"]
+	var bool_col: GRDColumn = col_map[&"is_active"]
 	_assert(bool_col.is_scalar(), "is_active is_scalar")
 	_assert(bool_col.is_bool(), "is_active is_bool")
 	_assert(not bool_col.is_numeric(), "is_active not is_numeric")
 
-	var tags_col: GRDPropertyColumn = col_map[&"tags"]
+	var tags_col: GRDColumn = col_map[&"tags"]
 	_assert(tags_col.is_array(), "tags is_array")
 	_assert(not tags_col.is_scalar(), "tags not is_scalar")
 
 
 func _test_property_column_helpers_enum() -> void:
 	print("\n[PropertyColumn helpers: enum]")
-	var cols := GRDPropertyColumn.from_script(TypedTestRow.new().get_script())
+	var cols := GRDColumn.from_script(TypedTestRow.new().get_script())
 	var col_map: Dictionary = {}
 	for c in cols:
 		col_map[c.name] = c
 
-	var rarity_col: GRDPropertyColumn = col_map[&"rarity"]
+	var rarity_col: GRDColumn = col_map[&"rarity"]
 	_assert(rarity_col.is_enum(), "rarity is_enum")
 	var opts := rarity_col.get_enum_values()
 	_assert_eq(opts.size(), 4, "rarity has 4 enum values")
@@ -663,33 +663,33 @@ func _test_property_column_helpers_enum() -> void:
 
 func _test_property_column_helpers_resource() -> void:
 	print("\n[PropertyColumn helpers: resource]")
-	var cols := GRDPropertyColumn.from_script(TypedTestRow.new().get_script())
+	var cols := GRDColumn.from_script(TypedTestRow.new().get_script())
 	var col_map: Dictionary = {}
 	for c in cols:
 		col_map[c.name] = c
 
-	var icon_col: GRDPropertyColumn = col_map[&"icon"]
+	var icon_col: GRDColumn = col_map[&"icon"]
 	_assert(icon_col.is_resource_reference(), "icon is_resource_reference")
 	_assert(icon_col.is_object(), "icon is_object")
 	_assert_eq(icon_col.get_resource_type(), "Texture2D", "icon resource type = Texture2D")
 
-	var stats_col: GRDPropertyColumn = col_map[&"stats"]
+	var stats_col: GRDColumn = col_map[&"stats"]
 	_assert(stats_col.is_resource_reference(), "stats is_resource_reference")
 	_assert_eq(stats_col.get_resource_type(), "NestedTestItem", "stats resource type = NestedTestItem")
 
-	var mod_col: GRDPropertyColumn = col_map[&"modifiers"]
+	var mod_col: GRDColumn = col_map[&"modifiers"]
 	_assert(mod_col.is_array(), "modifiers is_array")
 	_assert(not mod_col.is_resource_reference(), "modifiers not is_resource_reference")
 
 
 func _test_property_column_helpers_script() -> void:
 	print("\n[PropertyColumn helpers: script]")
-	var cols := GRDPropertyColumn.from_script(TypedTestRow.new().get_script())
+	var cols := GRDColumn.from_script(TypedTestRow.new().get_script())
 	var col_map: Dictionary = {}
 	for c in cols:
 		col_map[c.name] = c
 
-	var script_col: GRDPropertyColumn = col_map[&"behavior_script"]
+	var script_col: GRDColumn = col_map[&"behavior_script"]
 	_assert(script_col.is_script(), "behavior_script is_script")
 	_assert(script_col.is_resource_reference(), "behavior_script is_resource_reference")
 	_assert_eq(script_col.get_resource_type(), "Script", "behavior_script resource type = Script")
@@ -697,17 +697,17 @@ func _test_property_column_helpers_script() -> void:
 
 func _test_property_column_helpers_array() -> void:
 	print("\n[PropertyColumn helpers: array]")
-	var cols := GRDPropertyColumn.from_script(TypedTestRow.new().get_script())
+	var cols := GRDColumn.from_script(TypedTestRow.new().get_script())
 	var col_map: Dictionary = {}
 	for c in cols:
 		col_map[c.name] = c
 
-	var tags_col: GRDPropertyColumn = col_map[&"tags"]
+	var tags_col: GRDColumn = col_map[&"tags"]
 	_assert(tags_col.is_array(), "tags is_array")
 	var elem_hint := tags_col.get_array_element_hint()
 	_assert(not elem_hint.is_empty(), "tags has non-empty element hint")
 
-	var mod_col: GRDPropertyColumn = col_map[&"modifiers"]
+	var mod_col: GRDColumn = col_map[&"modifiers"]
 	_assert(mod_col.is_array(), "modifiers is_array")
 	var mod_hint := mod_col.get_array_element_hint()
 	_assert(not mod_hint.is_empty(), "modifiers has non-empty element hint")
@@ -715,18 +715,18 @@ func _test_property_column_helpers_array() -> void:
 
 func _test_property_column_helpers_width() -> void:
 	print("\n[PropertyColumn helpers: width]")
-	var cols := GRDPropertyColumn.from_script(TypedTestRow.new().get_script())
+	var cols := GRDColumn.from_script(TypedTestRow.new().get_script())
 	var col_map: Dictionary = {}
 	for c in cols:
 		col_map[c.name] = c
 
-	_assert_eq((col_map[&"is_active"] as GRDPropertyColumn).get_width_hint(), 96, "bool width fits header")
-	_assert_eq((col_map[&"hp"] as GRDPropertyColumn).get_width_hint(), 100, "int width = 100")
-	_assert_eq((col_map[&"rarity"] as GRDPropertyColumn).get_width_hint(), 140, "enum width = 140")
-	_assert_eq((col_map[&"icon"] as GRDPropertyColumn).get_width_hint(), 200, "resource width = 200")
-	_assert_eq((col_map[&"behavior_script"] as GRDPropertyColumn).get_width_hint(), 200, "script width = 200")
-	_assert_eq((col_map[&"tags"] as GRDPropertyColumn).get_width_hint(), 200, "array width = 200")
-	_assert_eq((col_map[&"name"] as GRDPropertyColumn).get_width_hint(), 150, "string width = 150")
+	_assert_eq((col_map[&"is_active"] as GRDColumn).get_width_hint(), 96, "bool width fits header")
+	_assert_eq((col_map[&"hp"] as GRDColumn).get_width_hint(), 100, "int width = 100")
+	_assert_eq((col_map[&"rarity"] as GRDColumn).get_width_hint(), 140, "enum width = 140")
+	_assert_eq((col_map[&"icon"] as GRDColumn).get_width_hint(), 200, "resource width = 200")
+	_assert_eq((col_map[&"behavior_script"] as GRDColumn).get_width_hint(), 200, "script width = 200")
+	_assert_eq((col_map[&"tags"] as GRDColumn).get_width_hint(), 200, "array width = 200")
+	_assert_eq((col_map[&"name"] as GRDColumn).get_width_hint(), 150, "string width = 150")
 
 
 # ===========================================================================
@@ -736,7 +736,7 @@ func _test_property_column_helpers_width() -> void:
 func _test_table_asset_create_row() -> void:
 	print("\n[TableAsset create_row]")
 	var ta := GRDTableAsset.new()
-	ta.row_script = TypedTestRow.new().get_script()
+	ta.schema = TypedTestRow.new().get_script()
 	var row: Resource = ta.create_row()
 	_assert(row != null, "create_row returns non-null")
 	_assert(row is TypedTestRow, "create_row returns TypedTestRow")
@@ -748,8 +748,8 @@ func _test_table_asset_create_row() -> void:
 func _test_table_asset_get_property_columns() -> void:
 	print("\n[TableAsset get_property_columns]")
 	var ta := GRDTableAsset.new()
-	ta.row_script = TypedTestRow.new().get_script()
-	var cols: Array[GRDPropertyColumn] = ta.get_property_columns()
+	ta.schema = TypedTestRow.new().get_script()
+	var cols: Array[GRDColumn] = ta.get_property_columns()
 	_assert(cols.size() > 0, "get_property_columns returns columns")
 	_assert_eq(cols.size(), ta.get_exported_columns().size(), "get_exported_columns == get_property_columns")
 	var names: Array[StringName] = []
@@ -762,7 +762,7 @@ func _test_table_asset_get_property_columns() -> void:
 func _test_table_asset_validate_row_types() -> void:
 	print("\n[TableAsset validate_row_types]")
 	var ta := GRDTableAsset.new()
-	ta.row_script = TypedTestRow.new().get_script()
+	ta.schema = TypedTestRow.new().get_script()
 	var good_row: Resource = ta.create_row()
 	if good_row is TypedTestRow:
 		(good_row as TypedTestRow).id = &"good"
@@ -779,10 +779,10 @@ func _test_table_asset_validate_row_types() -> void:
 func _test_table_asset_is_resource_first() -> void:
 	print("\n[TableAsset is_resource_first]")
 	var ta := GRDTableAsset.new()
-	ta.row_script = TypedTestRow.new().get_script()
-	_assert(ta.is_resource_first(), "row_script set = resource_first")
-	ta.row_script = null
-	_assert(not ta.is_resource_first(), "no row_script = not resource_first")
+	ta.schema = TypedTestRow.new().get_script()
+	_assert(ta.is_resource_first(), "schema set = resource_first")
+	ta.schema = null
+	_assert(not ta.is_resource_first(), "no schema = not resource_first")
 
 
 func _test_csharp_constants_generation() -> void:
@@ -824,7 +824,7 @@ func _make_typed_db() -> GRDDatabase:
 	var table := GRDTableAsset.new()
 	table.table_name = &"typed_items"
 	table.id_field = &"id"
-	table.row_script = TypedTestRow.new().get_script()
+	table.schema = TypedTestRow.new().get_script()
 
 	var row1 := TypedTestRow.new()
 	row1.id = &"sword"
@@ -901,7 +901,7 @@ func _test_typed_row_database_validation() -> void:
 	var table := GRDTableAsset.new()
 	table.table_name = &"mixed"
 	table.id_field = &"id"
-	table.row_script = TypedTestRow.new().get_script()
+	table.schema = TypedTestRow.new().get_script()
 	var good := TypedTestRow.new()
 	good.id = &"good"
 	table.rows.append(good)
@@ -925,7 +925,7 @@ func _test_typed_row_database_create_and_query() -> void:
 	var ta := GRDTableAsset.new()
 	ta.table_name = &"dynamic_typed"
 	ta.id_field = &"id"
-	ta.row_script = TypedTestRow.new().get_script()
+	ta.schema = TypedTestRow.new().get_script()
 	var row1: Resource = ta.create_row()
 	if row1 is TypedTestRow:
 		(row1 as TypedTestRow).id = &"item1"
@@ -951,12 +951,12 @@ func _test_typed_row_database_create_and_query() -> void:
 	if found != null:
 		_assert_eq(found.get_id(), "item2", "hp=75 is item2")
 
-	var cols: Array[GRDPropertyColumn] = ta.get_property_columns()
+	var cols: Array[GRDColumn] = ta.get_property_columns()
 	_assert(cols.size() > 0, "get_property_columns returns data")
 
 
-func _test_database_row_script_not_resource() -> void:
-	print("\n[Database row_script_not_resource]")
+func _test_database_schema_not_resource() -> void:
+	print("\n[Database schema_not_resource]")
 	var script := GDScript.new()
 	script.source_code = "extends Node\nfunc _init(): pass"
 	script.reload()
@@ -964,29 +964,29 @@ func _test_database_row_script_not_resource() -> void:
 	var table := GRDTableAsset.new()
 	table.table_name = &"bad_script"
 	table.id_field = &"id"
-	table.row_script = script
+	table.schema = script
 	table.rows = []
 	db_asset.tables = [table]
 	var db := GRDDatabase.load_from_asset(db_asset)
 	var issues := db.validate()
 	var found := false
 	for issue in issues:
-		if issue.code == "row_script_not_resource":
+		if issue.code == "schema_not_resource":
 			found = true
-	_assert(found, "Validation reports row_script_not_resource when script does not produce Resource")
+	_assert(found, "Validation reports schema_not_resource when script does not produce Resource")
 
 
 # ===========================================================================
-# GRDDatabaseIssue tests
+# GRDValidationIssue tests
 # ===========================================================================
 
 func _test_issue_format() -> void:
 	print("\n[Issue format]")
-	var issue := GRDDatabaseIssue.new(
+	var issue := GRDValidationIssue.new(
 		"test_code",
 		"Test message",
 		"test/location",
-		GRDDatabaseIssue.Severity.WARNING,
+		GRDValidationIssue.Severity.WARNING,
 	)
 	var formatted := issue.format()
 	_assert(formatted.contains("WARNING"), "format() contains WARNING")
@@ -998,50 +998,50 @@ func _test_issue_format() -> void:
 
 
 # ===========================================================================
-# GRDResourceCellEditorFactory tests
+# GRDCellEditorFactory tests
 # ===========================================================================
 
 func _test_resource_cell_editor_scalar() -> void:
 	print("\n[ResourceCellEditor: scalar]")
-	var str_col := GRDPropertyColumn.new()
+	var str_col := GRDColumn.new()
 	str_col.name = &"name"
 	str_col.type = TYPE_STRING
 	var changed_val: Variant = null
 	var on_change := func(v: Variant) -> void: changed_val = v
-	var ctrl := GRDResourceCellEditorFactory.create_cell_editor(str_col, "hello", null, on_change)
+	var ctrl := GRDCellEditorFactory.create_cell_editor(str_col, "hello", null, on_change)
 	_assert(ctrl != null, "String editor created")
 	_assert(ctrl is LineEdit, "String editor is LineEdit")
 
-	var int_col := GRDPropertyColumn.new()
+	var int_col := GRDColumn.new()
 	int_col.name = &"hp"
 	int_col.type = TYPE_INT
-	ctrl = GRDResourceCellEditorFactory.create_cell_editor(int_col, 42, null, on_change)
+	ctrl = GRDCellEditorFactory.create_cell_editor(int_col, 42, null, on_change)
 	_assert(ctrl != null, "Int editor created")
 	_assert(ctrl is SpinBox, "Int editor is SpinBox")
 
-	var float_col := GRDPropertyColumn.new()
+	var float_col := GRDColumn.new()
 	float_col.name = &"damage"
 	float_col.type = TYPE_FLOAT
-	ctrl = GRDResourceCellEditorFactory.create_cell_editor(float_col, 3.14, null, on_change)
+	ctrl = GRDCellEditorFactory.create_cell_editor(float_col, 3.14, null, on_change)
 	_assert(ctrl != null, "Float editor created")
 	_assert(ctrl is SpinBox, "Float editor is SpinBox")
 
-	var sn_col := GRDPropertyColumn.new()
+	var sn_col := GRDColumn.new()
 	sn_col.name = &"tag"
 	sn_col.type = TYPE_STRING_NAME
-	ctrl = GRDResourceCellEditorFactory.create_cell_editor(sn_col, &"fast", null, on_change)
+	ctrl = GRDCellEditorFactory.create_cell_editor(sn_col, &"fast", null, on_change)
 	_assert(ctrl != null, "StringName editor created")
 	_assert(ctrl is LineEdit, "StringName editor is LineEdit")
 
 
 func _test_resource_cell_editor_bool() -> void:
 	print("\n[ResourceCellEditor: bool]")
-	var bool_col := GRDPropertyColumn.new()
+	var bool_col := GRDColumn.new()
 	bool_col.name = &"is_active"
 	bool_col.type = TYPE_BOOL
 	var changed_val: Variant = null
 	var on_change := func(v: Variant) -> void: changed_val = v
-	var ctrl := GRDResourceCellEditorFactory.create_cell_editor(bool_col, true, null, on_change)
+	var ctrl := GRDCellEditorFactory.create_cell_editor(bool_col, true, null, on_change)
 	_assert(ctrl != null, "Bool editor created")
 	_assert(ctrl is CheckBox, "Bool editor is CheckBox")
 	var check: CheckBox = ctrl as CheckBox
@@ -1050,14 +1050,14 @@ func _test_resource_cell_editor_bool() -> void:
 
 func _test_resource_cell_editor_enum() -> void:
 	print("\n[ResourceCellEditor: enum]")
-	var enum_col := GRDPropertyColumn.new()
+	var enum_col := GRDColumn.new()
 	enum_col.name = &"rarity"
 	enum_col.type = TYPE_STRING
 	enum_col.hint = PROPERTY_HINT_ENUM
 	enum_col.hint_string = "common,uncommon,rare,epic"
 	var changed_val: Variant = null
 	var on_change := func(v: Variant) -> void: changed_val = v
-	var ctrl := GRDResourceCellEditorFactory.create_cell_editor(enum_col, "common", null, on_change)
+	var ctrl := GRDCellEditorFactory.create_cell_editor(enum_col, "common", null, on_change)
 	_assert(ctrl != null, "Enum editor created")
 	_assert(ctrl is OptionButton, "Enum editor is OptionButton")
 	var opt: OptionButton = ctrl as OptionButton
@@ -1067,14 +1067,14 @@ func _test_resource_cell_editor_enum() -> void:
 
 func _test_resource_cell_editor_resource_ref() -> void:
 	print("\n[ResourceCellEditor: resource ref]")
-	var res_col := GRDPropertyColumn.new()
+	var res_col := GRDColumn.new()
 	res_col.name = &"icon"
 	res_col.type = TYPE_OBJECT
 	res_col.hint = PROPERTY_HINT_RESOURCE_TYPE
 	res_col.hint_string = "Texture2D"
 	var changed_val: Variant = null
 	var on_change := func(v: Variant) -> void: changed_val = v
-	var ctrl := GRDResourceCellEditorFactory.create_cell_editor(res_col, null, null, on_change)
+	var ctrl := GRDCellEditorFactory.create_cell_editor(res_col, null, null, on_change)
 	_assert(ctrl != null, "Resource ref editor created")
 	if Engine.is_editor_hint():
 		_assert(ctrl is EditorResourcePicker, "Resource ref editor is EditorResourcePicker")
@@ -1084,12 +1084,12 @@ func _test_resource_cell_editor_resource_ref() -> void:
 
 func _test_resource_cell_editor_array() -> void:
 	print("\n[ResourceCellEditor: array]")
-	var arr_col := GRDPropertyColumn.new()
+	var arr_col := GRDColumn.new()
 	arr_col.name = &"tags"
 	arr_col.type = TYPE_ARRAY
 	var changed_val: Variant = null
 	var on_change := func(v: Variant) -> void: changed_val = v
-	var ctrl := GRDResourceCellEditorFactory.create_cell_editor(arr_col, ["a", "b"], null, on_change)
+	var ctrl := GRDCellEditorFactory.create_cell_editor(arr_col, ["a", "b"], null, on_change)
 	_assert(ctrl != null, "Array editor created")
 	_assert(ctrl is HBoxContainer, "Array editor is HBoxContainer")
 	var hbox: HBoxContainer = ctrl as HBoxContainer
@@ -1098,17 +1098,17 @@ func _test_resource_cell_editor_array() -> void:
 
 func _test_resource_cell_editor_dictionary() -> void:
 	print("\n[ResourceCellEditor: dictionary]")
-	var dict_col := GRDPropertyColumn.new()
+	var dict_col := GRDColumn.new()
 	dict_col.name = &"config"
 	dict_col.type = TYPE_DICTIONARY
-	var ctrl := GRDResourceCellEditorFactory.create_cell_editor(dict_col, {"key": "val"}, null, func(_v: Variant) -> void: pass)
+	var ctrl := GRDCellEditorFactory.create_cell_editor(dict_col, {"key": "val"}, null, func(_v: Variant) -> void: pass)
 	_assert(ctrl != null, "Dictionary editor created")
 	_assert(ctrl is Label, "Dictionary editor is read-only Label")
 
 
 func _test_resource_cell_editor_property_column_integration() -> void:
 	print("\n[ResourceCellEditor: PropertyColumn integration]")
-	var cols := GRDPropertyColumn.from_script(TypedTestRow.new().get_script())
+	var cols := GRDColumn.from_script(TypedTestRow.new().get_script())
 	_assert(cols.size() > 0, "Property columns available")
 
 	var row := TypedTestRow.new()
@@ -1123,17 +1123,17 @@ func _test_resource_cell_editor_property_column_integration() -> void:
 	for col in cols:
 		var on_change := func(v: Variant) -> void: pass
 		var value: Variant = row.get(String(col.name))
-		var ctrl: Control = GRDResourceCellEditorFactory.create_cell_editor(col, value, row, on_change)
+		var ctrl: Control = GRDCellEditorFactory.create_cell_editor(col, value, row, on_change)
 		_assert(ctrl != null, "Editor created for column '%s'" % col.name)
 
 	# Verify name column produces LineEdit.
-	var name_ctrl: Control = GRDResourceCellEditorFactory.create_cell_editor(
+	var name_ctrl: Control = GRDCellEditorFactory.create_cell_editor(
 		cols[1], row.name, row, func(_v: Variant) -> void: pass,
 	)
 	_assert(name_ctrl is LineEdit, "name column produces LineEdit")
 	_assert_eq((name_ctrl as LineEdit).text, "Test", "LineEdit shows correct text")
 
-	var hp_ctrl: Control = GRDResourceCellEditorFactory.create_cell_editor(
+	var hp_ctrl: Control = GRDCellEditorFactory.create_cell_editor(
 		cols[2], row.hp, row, func(_v: Variant) -> void: pass,
 	)
 	_assert(hp_ctrl is SpinBox, "hp column produces SpinBox")
@@ -1151,38 +1151,38 @@ func _test_resource_cell_editor_unlimited_nested_cell_resource_summary() -> void
 		current.child = child
 		current = child
 
-	var summary := GRDResourceCellEditorFactory.resource_summary(root)
-	_assert(summary.contains("level_5"), "Summary includes GRDCellResource nesting past previous depth cap")
+	var summary := GRDCellEditorFactory.resource_summary(root)
+	_assert(summary.contains("level_5"), "Summary includes GRDCellSchema nesting past previous depth cap")
 
 	current.child = root
-	summary = GRDResourceCellEditorFactory.resource_summary(root)
-	_assert(summary.contains("NestedCellTestItem[cycle]"), "Summary stops cyclic GRDCellResource nesting")
+	summary = GRDCellEditorFactory.resource_summary(root)
+	_assert(summary.contains("NestedCellTestItem[cycle]"), "Summary stops cyclic GRDCellSchema nesting")
 
-	var col := GRDPropertyColumn.new()
+	var col := GRDColumn.new()
 	col.name = &"child"
 	col.type = TYPE_OBJECT
 	col.hint = PROPERTY_HINT_RESOURCE_TYPE
 	col.hint_string = "NestedCellTestItem"
 	var editor_root := NestedCellTestItem.new()
-	var ctrl := GRDResourceCellEditorFactory.create_cell_editor(col, editor_root, null, func(_value: Variant) -> void:
+	var ctrl := GRDCellEditorFactory.create_cell_editor(col, editor_root, null, func(_value: Variant) -> void:
 		pass
 	)
-	_assert(ctrl != null, "Recursive GRDCellResource editor is created")
-	_assert(editor_root.child == null, "Recursive GRDCellResource editor does not auto-create child forever")
+	_assert(ctrl != null, "Recursive GRDCellSchema editor is created")
+	_assert(editor_root.child == null, "Recursive GRDCellSchema editor does not auto-create child forever")
 
 	var container := NestedCellContainerTestItem.new()
 	container.children = [NestedCellTestItem.new()]
-	var array_col := GRDPropertyColumn.new()
+	var array_col := GRDColumn.new()
 	array_col.name = &"containers"
 	array_col.type = TYPE_ARRAY
 	array_col.hint_string = "NestedCellContainerTestItem"
 	array_col.element_script = NestedCellContainerTestItem.new().get_script()
-	ctrl = GRDResourceCellEditorFactory.create_cell_editor(array_col, [container], null, func(_value: Variant) -> void:
+	ctrl = GRDCellEditorFactory.create_cell_editor(array_col, [container], null, func(_value: Variant) -> void:
 		pass
 	)
-	_assert(_control_tree_contains_text(ctrl, "label"), "Nested GRDCellResource arrays render structured editors")
-	_assert(_control_tree_contains_text(ctrl, "Container 1"), "Nested GRDCellResource arrays render parent rows as cards")
-	_assert(_control_tree_contains_text(ctrl, "+ Add Container"), "Nested GRDCellResource array add button uses item label")
+	_assert(_control_tree_contains_text(ctrl, "label"), "Nested GRDCellSchema arrays render structured editors")
+	_assert(_control_tree_contains_text(ctrl, "Container 1"), "Nested GRDCellSchema arrays render parent rows as cards")
+	_assert(_control_tree_contains_text(ctrl, "+ Add Container"), "Nested GRDCellSchema array add button uses item label")
 
 
 func _control_tree_contains_text(ctrl: Control, text: String) -> bool:

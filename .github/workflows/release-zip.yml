@@ -1,0 +1,62 @@
+name: Build release zip
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and upload"
+        required: true
+        type: string
+      ref:
+        description: "Git ref to build before the tag exists"
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-zip:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.ref || github.ref }}
+
+      - name: Build AssetLib zip
+        run: |
+          set -euo pipefail
+
+          version="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "release" ]; then
+            version="${{ github.event.release.tag_name }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.tag }}"
+          fi
+          version="${version#v}"
+
+          zip_name="godot-resource-database-${version}.zip"
+
+          mkdir -p dist
+          git archive --format=zip --output="dist/${zip_name}" HEAD
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-resource-database-release-zip
+          path: dist/*.zip
+          if-no-files-found: error
+
+      - name: Attach zip to GitHub release
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name || inputs.tag }}" dist/*.zip --clobber

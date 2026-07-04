@@ -1,4 +1,4 @@
-class_name GRDRowSchema
+class_name GRDTableSchema
 extends Resource
 
 @export var id: String

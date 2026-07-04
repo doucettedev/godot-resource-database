@@ -1,4 +1,4 @@
-class_name GRDDatabaseIssue
+class_name GRDValidationIssue
 extends RefCounted
 
 

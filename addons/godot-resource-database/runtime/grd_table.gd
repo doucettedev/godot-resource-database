@@ -12,7 +12,7 @@ var _row_order: Array[GRDRow] = []
 var _indexes: Dictionary = {}      # field_path -> { normalized_value -> Array[GRDRow] }
 var _asset: GRDTableAsset
 var _options: GRDDatabaseOptions
-var _build_issues: Array[GRDDatabaseIssue] = []
+var _build_issues: Array[GRDValidationIssue] = []
 
 
 func _init(
@@ -73,7 +73,7 @@ func all_readonly() -> Array[GRDRow]:
 
 
 ## Issues encountered during row loading (directory mode, type mismatches, etc.).
-func get_build_issues() -> Array[GRDDatabaseIssue]:
+func get_build_issues() -> Array[GRDValidationIssue]:
 	return _build_issues.duplicate()
 
 

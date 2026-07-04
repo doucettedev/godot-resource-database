@@ -1,8 +1,8 @@
-class_name GRDPropertyColumn
+class_name GRDColumn
 extends RefCounted
 
 ## Describes a single column derived from Godot exported property metadata.
-## Resource-first architecture. Columns are inferred from row_script or
+## Resource-first architecture. Columns are inferred from schema or
 ## row instance property lists, not from manual column definitions.
 
 ## Property name (e.g. &"id", &"name", &"hp").
@@ -41,12 +41,12 @@ var element_script: Script = null
 # Factory methods
 # ---------------------------------------------------------------------------
 
-## Create a GRDPropertyColumn from a Godot property dictionary.
+## Create a GRDColumn from a Godot property dictionary.
 ## The dict comes from Script.get_script_property_list() or
 ## Object.get_property_list() and contains: name, class_name, type,
 ## hint, hint_string, usage, etc.
-static func from_property_dict(dict: Dictionary) -> GRDPropertyColumn:
-	var col := GRDPropertyColumn.new()
+static func from_property_dict(dict: Dictionary) -> GRDColumn:
+	var col := GRDColumn.new()
 	col.name = StringName(dict.get("name", ""))
 	col.display_name = String(dict.get("name", ""))
 	col.type = int(dict.get("type", 0))
@@ -67,12 +67,12 @@ static func from_property_dict(dict: Dictionary) -> GRDPropertyColumn:
 	return col
 
 
-## Build an array of GRDPropertyColumn from a Script's property list.
+## Build an array of GRDColumn from a Script's property list.
 ## Filters to exported/editor-visible/storage properties only,
 ## excluding built-in Resource props. Base script exports are listed first,
 ## then derived script exports.
-static func from_script(script: Script) -> Array[GRDPropertyColumn]:
-	var result: Array[GRDPropertyColumn] = []
+static func from_script(script: Script) -> Array[GRDColumn]:
+	var result: Array[GRDColumn] = []
 	if script == null:
 		return result
 	var seen: Dictionary = {}
@@ -80,7 +80,7 @@ static func from_script(script: Script) -> Array[GRDPropertyColumn]:
 	return result
 
 
-static func _append_script_columns_base_first(script: Script, result: Array[GRDPropertyColumn], seen: Dictionary) -> void:
+static func _append_script_columns_base_first(script: Script, result: Array[GRDColumn], seen: Dictionary) -> void:
 	var base_script := script.get_base_script()
 	if base_script != null:
 		_append_script_columns_base_first(base_script, result, seen)
@@ -101,10 +101,10 @@ static func _append_script_columns_base_first(script: Script, result: Array[GRDP
 		result.append(col)
 
 
-## Build an array of GRDPropertyColumn from a Resource instance's property list.
-## This is the fallback when row_script is not set.
-static func from_resource(resource: Resource) -> Array[GRDPropertyColumn]:
-	var result: Array[GRDPropertyColumn] = []
+## Build an array of GRDColumn from a Resource instance's property list.
+## This is the fallback when schema is not set.
+static func from_resource(resource: Resource) -> Array[GRDColumn]:
+	var result: Array[GRDColumn] = []
 	if resource == null:
 		return result
 	for dict in resource.get_property_list():

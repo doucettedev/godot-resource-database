@@ -4,7 +4,7 @@ extends VBoxContainer
 
 ## Displays GRDDatabase.validate() issues in a collapsible panel with
 ## severity-colored entries.  No broad new validation rules are added;
-## this is a display component for existing GRDDatabaseIssue data.
+## this is a display component for existing GRDValidationIssue data.
 
 var _toggle_btn: Button
 var _issue_rtl: RichTextLabel
@@ -38,7 +38,7 @@ func _build_ui() -> void:
 
 
 ## Replaces the displayed issues.
-func set_issues(issues: Array[GRDDatabaseIssue]) -> void:
+func set_issues(issues: Array[GRDValidationIssue]) -> void:
 	var count: int = issues.size()
 	_toggle_btn.text = "Validation (%d issue%s)" % [
 		count, "" if count == 1 else "s",
@@ -53,9 +53,9 @@ func set_issues(issues: Array[GRDDatabaseIssue]) -> void:
 	for issue in issues:
 		var color: String
 		match issue.severity:
-			GRDDatabaseIssue.Severity.ERROR:
+			GRDValidationIssue.Severity.ERROR:
 				color = "#" + GRDTheme.ERROR.to_html(false)
-			GRDDatabaseIssue.Severity.WARNING:
+			GRDValidationIssue.Severity.WARNING:
 				color = "#" + GRDTheme.WARNING.to_html(false)
 			_:
 				color = "#" + GRDTheme.TEXT_MUTED.to_html(false)

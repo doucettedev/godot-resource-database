@@ -6,7 +6,7 @@ extends RefCounted
 
 var _tables: Dictionary = {}   # StringName -> GRDTable
 var _options: GRDDatabaseOptions
-var _issues: Array[GRDDatabaseIssue] = []
+var _issues: Array[GRDValidationIssue] = []
 var _asset: GRDDatabaseAsset = null
 var _source_path: String = ""
 
@@ -28,7 +28,7 @@ static func load_from_path(
 		var db: GRDDatabase = GRDDatabase.new()
 		db._source_path = path
 		db._options = options
-		db._issues.append(GRDDatabaseIssue.new(
+		db._issues.append(GRDValidationIssue.new(
 			"load_failed",
 			"Cannot load resource: " + path,
 			path,
@@ -39,7 +39,7 @@ static func load_from_path(
 		var db: GRDDatabase = GRDDatabase.new()
 		db._source_path = path
 		db._options = options
-		db._issues.append(GRDDatabaseIssue.new(
+		db._issues.append(GRDValidationIssue.new(
 			"invalid_asset",
 			"Resource is not a GRDDatabaseAsset: " + path,
 			path,
@@ -113,11 +113,11 @@ func table_count() -> int:
 # Diagnostics
 # ---------------------------------------------------------------------------
 
-func get_issues() -> Array[GRDDatabaseIssue]:
+func get_issues() -> Array[GRDValidationIssue]:
 	return _issues.duplicate()
 
 
-func validate() -> Array[GRDDatabaseIssue]:
+func validate() -> Array[GRDValidationIssue]:
 	return get_issues()
 
 
@@ -140,21 +140,21 @@ func _add_table_asset(table_asset: GRDTableAsset) -> void:
 
 	# Validate empty table names.
 	if table_name == &"":
-		_issues.append(GRDDatabaseIssue.new(
+		_issues.append(GRDValidationIssue.new(
 			"empty_table_name",
 			"A table asset has an empty table_name.",
 			_source_path,
-			GRDDatabaseIssue.Severity.WARNING,
+			GRDValidationIssue.Severity.WARNING,
 		))
 		# Still add with an empty-string name so the data isn't silently lost.
 
 	# Validate duplicate table names.
 	if _tables.has(table_name):
-		_issues.append(GRDDatabaseIssue.new(
+		_issues.append(GRDValidationIssue.new(
 			"duplicate_table_name",
 			"Duplicate table name '%s' — later table overwrites earlier." % String(table_name),
 			_source_path + "/" + String(table_name),
-			GRDDatabaseIssue.Severity.WARNING,
+			GRDValidationIssue.Severity.WARNING,
 		))
 
 	var table: GRDTable = GRDTable.new(table_asset, _options)
@@ -178,37 +178,37 @@ func _validate() -> void:
 		_validate_ids(table, table_loc, ta)
 
 
-## Validates Resource-first table setup: row_script, row types, non-null rows.
+## Validates Resource-first table setup: schema, row types, non-null rows.
 func _validate_typed_rows(ta: GRDTableAsset, table_loc: String) -> void:
-	# When row_script is set, validate it can produce a Resource instance.
-	if ta.row_script != null:
+	# When schema is set, validate it can produce a Resource instance.
+	if ta.schema != null:
 		var test_row: Resource = ta.create_row()
 		if test_row == null:
-			_issues.append(GRDDatabaseIssue.new(
-				"row_script_not_resource",
-				"row_script in table '%s' does not produce a Resource instance." % table_loc,
+			_issues.append(GRDValidationIssue.new(
+				"schema_not_resource",
+				"schema in table '%s' does not produce a Resource instance." % table_loc,
 				table_loc,
-				GRDDatabaseIssue.Severity.ERROR,
+				GRDValidationIssue.Severity.ERROR,
 			))
 
-		# Validate row types match row_script.
+		# Validate row types match schema.
 		var type_issues: Array[String] = ta.validate_row_types()
 		for msg in type_issues:
-			_issues.append(GRDDatabaseIssue.new(
+			_issues.append(GRDValidationIssue.new(
 				"row_type_mismatch",
 				"Table '%s': %s" % [table_loc, msg],
 				table_loc,
-				GRDDatabaseIssue.Severity.WARNING,
+				GRDValidationIssue.Severity.WARNING,
 			))
 
 	# Non-null rows check.
 	for i in ta.rows.size():
 		if ta.rows[i] == null:
-			_issues.append(GRDDatabaseIssue.new(
+			_issues.append(GRDValidationIssue.new(
 				"null_row",
 				"Table '%s' has a null row at index %d." % [table_loc, i],
 				table_loc,
-				GRDDatabaseIssue.Severity.ERROR,
+				GRDValidationIssue.Severity.ERROR,
 			))
 
 
@@ -222,12 +222,12 @@ func _validate_ids(table: GRDTable, table_loc: String, ta: GRDTableAsset) -> voi
 
 		# Missing ID.
 		if raw_id == null or str(raw_id).is_empty():
-			var severity: GRDDatabaseIssue.Severity
+			var severity: GRDValidationIssue.Severity
 			if _options.strict_ids:
-				severity = GRDDatabaseIssue.Severity.ERROR
+				severity = GRDValidationIssue.Severity.ERROR
 			else:
-				severity = GRDDatabaseIssue.Severity.WARNING
-			_issues.append(GRDDatabaseIssue.new(
+				severity = GRDValidationIssue.Severity.WARNING
+			_issues.append(GRDValidationIssue.new(
 				"missing_id",
 				"Row in table '%s' has no value for id_field '%s'." % [table_loc, id_field_name],
 				table_loc,
@@ -239,11 +239,11 @@ func _validate_ids(table: GRDTable, table_loc: String, ta: GRDTableAsset) -> voi
 
 		# Duplicate ID.
 		if seen_ids.has(id_str):
-			_issues.append(GRDDatabaseIssue.new(
+			_issues.append(GRDValidationIssue.new(
 				"duplicate_id",
 				"Duplicate id '%s' in table '%s'." % [id_str, table_loc],
 				table_loc + "/" + id_str,
-				GRDDatabaseIssue.Severity.ERROR,
+				GRDValidationIssue.Severity.ERROR,
 			))
 		seen_ids[id_str] = true
 

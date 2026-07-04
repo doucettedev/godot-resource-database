@@ -7,7 +7,9 @@ on:
       - "!addon-only/**"
     paths:
       - "addons/godot-resource-database/**"
+      - ".gitignore"
       - ".github/workflows/addon-only.yml"
+      - ".github/workflows/sync-addon-only-back.yml"
   workflow_dispatch:
 
 permissions:
@@ -29,6 +31,22 @@ jobs:
           src_branch="${GITHUB_REF_NAME}"
           dst_branch="addon-only/${src_branch}"
 
+          git show HEAD:.gitignore > /tmp/addon-only.gitignore
+          git show HEAD:.github/workflows/sync-addon-only-back.yml > /tmp/sync-addon-only-back.yml
           split_sha="$(git subtree split --prefix=addons/godot-resource-database HEAD)"
 
-          git push origin "${split_sha}:refs/heads/${dst_branch}" --force-with-lease
+          git switch --detach "${split_sha}"
+          cp /tmp/addon-only.gitignore .gitignore
+          mkdir -p .github/workflows
+          cp /tmp/sync-addon-only-back.yml .github/workflows/sync-addon-only-back.yml
+          git add .gitignore
+          git add .github/workflows/sync-addon-only-back.yml
+          git rm --cached --ignore-unmatch '*.uid' '*.import'
+
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Add addon-only gitignore"
+          fi
+
+          git push origin "HEAD:refs/heads/${dst_branch}" --force-with-lease
