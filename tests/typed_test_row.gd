@@ -3,7 +3,7 @@ extends Resource
 
 ## A typed Resource row for testing the Resource-first architecture.
 ## Exercises enum, resource-reference, script, nested, and array metadata
-## to prove GRDPropertyColumn filters and helpers.
+## to prove GRDColumn filters and helpers.
 
 @export var id: StringName = &""
 @export var name: String = ""

@@ -1,8 +1,8 @@
 @tool
-class_name GRDResourceCellEditorFactory
+class_name GRDCellEditorFactory
 extends RefCounted
 
-## Resource-first cell editor factory.  Uses GRDPropertyColumn metadata
+## Resource-first cell editor factory.  Uses GRDColumn metadata
 ## derived from Godot exported properties.  No schema/type system dependencies.
 ##
 ## Supports: scalar (String, StringName, int, float, bool), enum hints,
@@ -87,10 +87,10 @@ static func clear_caches() -> void:
 	_assignable_scripts_cache.clear()
 
 
-## Creates an appropriate inline control for a cell based on GRDPropertyColumn.
+## Creates an appropriate inline control for a cell based on GRDColumn.
 ## `on_change(new_value)` is called when the user edits the cell.
 static func create_cell_editor(
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	value: Variant,
 	resource: Resource,
 	on_change: Callable,
@@ -166,7 +166,7 @@ static func _create_bool_editor(value: Variant, on_change: Callable) -> Control:
 	return check
 
 
-static func _create_numeric_editor(col: GRDPropertyColumn, value: Variant, on_change: Callable) -> Control:
+static func _create_numeric_editor(col: GRDColumn, value: Variant, on_change: Callable) -> Control:
 	var spin: SpinBox = SpinBox.new()
 	GRDTheme.style_spinbox(spin)
 	spin.min_value = -999999999
@@ -189,7 +189,7 @@ static func _create_numeric_editor(col: GRDPropertyColumn, value: Variant, on_ch
 	return spin
 
 
-static func _create_string_editor(col: GRDPropertyColumn, value: Variant, on_change: Callable) -> Control:
+static func _create_string_editor(col: GRDColumn, value: Variant, on_change: Callable) -> Control:
 	var edit: LineEdit = LineEdit.new()
 	GRDTheme.style_input(edit)
 	edit.text = str(value) if value != null else ""
@@ -224,7 +224,7 @@ static func _create_string_editor(col: GRDPropertyColumn, value: Variant, on_cha
 # File path editor
 # ---------------------------------------------------------------------------
 
-static func _create_file_path_editor(col: GRDPropertyColumn, value: Variant, on_change: Callable) -> Control:
+static func _create_file_path_editor(col: GRDColumn, value: Variant, on_change: Callable) -> Control:
 	# EditorFileDialog is editor-only; fall back to plain string editor at runtime.
 	if not Engine.is_editor_hint():
 		return _create_string_editor(col, value, on_change)
@@ -306,13 +306,13 @@ static func _create_file_path_editor(col: GRDPropertyColumn, value: Variant, on_
 	return box
 
 
-static func _file_path_display_value(col: GRDPropertyColumn, value: String) -> String:
+static func _file_path_display_value(col: GRDColumn, value: String) -> String:
 	if col.is_global_file_path() or value.is_empty():
 		return value
 	return ResourceUID.ensure_path(value)
 
 
-static func _file_path_storage_value(col: GRDPropertyColumn, value: String) -> String:
+static func _file_path_storage_value(col: GRDColumn, value: String) -> String:
 	if col.is_global_file_path() or value.is_empty() or value.begins_with("uid://"):
 		return value
 	return project_file_path_storage_value(value)
@@ -331,7 +331,7 @@ static func project_file_path_storage_value(value: String) -> String:
 	return value
 
 
-static func _sync_file_path_tooltip(edit: LineEdit, col: GRDPropertyColumn, stored_value: String) -> void:
+static func _sync_file_path_tooltip(edit: LineEdit, col: GRDColumn, stored_value: String) -> void:
 	if col.is_global_file_path() or stored_value.is_empty():
 		edit.tooltip_text = edit.text
 		return
@@ -343,7 +343,7 @@ static func _sync_file_path_tooltip(edit: LineEdit, col: GRDPropertyColumn, stor
 # Enum editor
 # ---------------------------------------------------------------------------
 
-static func _create_enum_editor(col: GRDPropertyColumn, value: Variant, on_change: Callable) -> Control:
+static func _create_enum_editor(col: GRDColumn, value: Variant, on_change: Callable) -> Control:
 	var opts: PackedStringArray = col.get_enum_values()
 	var option: OptionButton = OptionButton.new()
 	option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -383,7 +383,7 @@ static func _create_enum_editor(col: GRDPropertyColumn, value: Variant, on_chang
 # Resource reference editors
 # ---------------------------------------------------------------------------
 
-static func _create_resource_editor(col: GRDPropertyColumn, value: Variant, on_change: Callable) -> Control:
+static func _create_resource_editor(col: GRDColumn, value: Variant, on_change: Callable) -> Control:
 	# EditorResourcePicker is editor-only; fall back to read-only in headless.
 	if not Engine.is_editor_hint():
 		return read_only_label(_resource_summary(value))
@@ -423,7 +423,7 @@ static func _create_resource_editor(col: GRDPropertyColumn, value: Variant, on_c
 	return picker
 
 
-static func _create_script_editor(col: GRDPropertyColumn, value: Variant, on_change: Callable) -> Control:
+static func _create_script_editor(col: GRDColumn, value: Variant, on_change: Callable) -> Control:
 	# EditorResourcePicker is editor-only; fall back to read-only in headless.
 	if not Engine.is_editor_hint():
 		return read_only_label(_resource_summary(value))
@@ -442,7 +442,7 @@ static func _create_script_editor(col: GRDPropertyColumn, value: Variant, on_cha
 	return picker
 
 
-static func _create_row_reference_editor(col: GRDPropertyColumn, value: Variant, on_change: Callable, database_asset: GRDDatabaseAsset) -> Control:
+static func _create_row_reference_editor(col: GRDColumn, value: Variant, on_change: Callable, database_asset: GRDDatabaseAsset) -> Control:
 	var type_name: String = col.get_resource_type()
 	var available_ids: PackedStringArray = _get_available_ids_for_type(database_asset, type_name)
 	if database_asset == null or available_ids.is_empty():
@@ -475,8 +475,8 @@ static func _create_row_reference_editor(col: GRDPropertyColumn, value: Variant,
 	return option
 
 
-static func _create_cell_resource_editor(col: GRDPropertyColumn, value: Variant, on_change: Callable, database_asset: GRDDatabaseAsset, cell_resource_stack: Dictionary = {}) -> Control:
-	var base_script: Script = GRDPropertyColumn._resolve_class_script(col.get_resource_type())
+static func _create_cell_resource_editor(col: GRDColumn, value: Variant, on_change: Callable, database_asset: GRDDatabaseAsset, cell_resource_stack: Dictionary = {}) -> Control:
+	var base_script: Script = GRDColumn._resolve_class_script(col.get_resource_type())
 	if base_script == null:
 		return _create_resource_editor(col, value, on_change)
 
@@ -494,7 +494,7 @@ static func _create_cell_resource_editor(col: GRDPropertyColumn, value: Variant,
 	return container
 
 
-static func _create_empty_cell_resource_stub(col: GRDPropertyColumn, base_script: Script, on_change: Callable, database_asset: GRDDatabaseAsset, cell_resource_stack: Dictionary) -> Control:
+static func _create_empty_cell_resource_stub(col: GRDColumn, base_script: Script, on_change: Callable, database_asset: GRDDatabaseAsset, cell_resource_stack: Dictionary) -> Control:
 	var container: VBoxContainer = VBoxContainer.new()
 	container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	container.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -525,7 +525,7 @@ static func _create_empty_cell_resource_stub(col: GRDPropertyColumn, base_script
 	return container
 
 
-static func _rebuild_cell_resource_editor(container: VBoxContainer, col: GRDPropertyColumn, base_script: Script, current: Resource, on_change: Callable, database_asset: GRDDatabaseAsset, cell_resource_stack: Dictionary) -> void:
+static func _rebuild_cell_resource_editor(container: VBoxContainer, col: GRDColumn, base_script: Script, current: Resource, on_change: Callable, database_asset: GRDDatabaseAsset, cell_resource_stack: Dictionary) -> void:
 	for child in container.get_children():
 		container.remove_child(child)
 		child.queue_free()
@@ -589,12 +589,12 @@ static func _rebuild_cell_resource_editor(container: VBoxContainer, col: GRDProp
 		container.add_child(row)
 
 
-static func _get_cell_resource_columns(current: Resource) -> Array[GRDPropertyColumn]:
-	var cols: Array[GRDPropertyColumn] = GRDPropertyColumn.from_resource(current)
+static func _get_cell_resource_columns(current: Resource) -> Array[GRDColumn]:
+	var cols: Array[GRDColumn] = GRDColumn.from_resource(current)
 	if not cols.is_empty():
 		return cols
 	var script: Script = current.get_script() if current != null else null
-	return GRDPropertyColumn.from_script(script)
+	return GRDColumn.from_script(script)
 
 
 # ---------------------------------------------------------------------------
@@ -602,7 +602,7 @@ static func _get_cell_resource_columns(current: Resource) -> Array[GRDPropertyCo
 # ---------------------------------------------------------------------------
 
 static func _create_array_editor(
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	value: Variant,
 	resource: Resource,
 	on_change: Callable,
@@ -644,7 +644,7 @@ static func _create_array_editor(
 ## Opens a popup for editing an Array value.
 ## Shows a simple JSON-like text editor for the array.
 static func _open_array_edit_popup(
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	value: Variant,
 	resource: Resource,
 	on_change: Callable,
@@ -713,11 +713,11 @@ static func _open_array_edit_popup(
 
 ## Returns true when the array column has a resolved element_script and
 ## the element class has exported properties suitable for table editing.
-static func _is_structured_array(col: GRDPropertyColumn, value: Variant) -> bool:
+static func _is_structured_array(col: GRDColumn, value: Variant) -> bool:
 	var elem_script: Script = _resolve_structured_array_element_script(col, value)
 	if elem_script == null:
 		return false
-	var elem_cols: Array[GRDPropertyColumn] = GRDPropertyColumn.from_script(elem_script)
+	var elem_cols: Array[GRDColumn] = GRDColumn.from_script(elem_script)
 	return elem_cols.size() > 0
 
 
@@ -731,7 +731,7 @@ static func _get_element_script_from_value(arr: Array) -> Script:
 	return null
 
 
-static func _resolve_structured_array_element_script(col: GRDPropertyColumn, value: Variant) -> Script:
+static func _resolve_structured_array_element_script(col: GRDColumn, value: Variant) -> Script:
 	if value is Array:
 		var concrete_script: Script = _get_element_script_from_value(value as Array)
 		if concrete_script != null:
@@ -739,13 +739,13 @@ static func _resolve_structured_array_element_script(col: GRDPropertyColumn, val
 	return col.element_script
 
 
-static func _is_row_reference_array(col: GRDPropertyColumn, value: Variant) -> bool:
+static func _is_row_reference_array(col: GRDColumn, value: Variant) -> bool:
 	var elem_script: Script = _resolve_structured_array_element_script(col, value)
-	return elem_script != null and _script_inherits_named(elem_script, "GRDRowSchema")
+	return elem_script != null and _script_inherits_named(elem_script, "GRDTableSchema")
 
 
 static func _create_row_reference_array_inline(
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	value: Variant,
 	on_change: Callable,
 	database_asset: GRDDatabaseAsset,
@@ -779,7 +779,7 @@ static func _emit_row_reference_array_change(working_elements: Array[Resource], 
 
 static func _rebuild_row_reference_array_inline(
 	container: VBoxContainer,
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	type_name: String,
 	available_ids: PackedStringArray,
 	working_elements: Array[Resource],
@@ -864,7 +864,7 @@ static func _structured_array_summary(value: Variant) -> String:
 ## Creates an inline table editor for typed Resource arrays directly in the cell.
 ## Each row has editors for the element's properties; changes call on_change immediately.
 static func _create_structured_array_inline(
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	value: Variant,
 	resource: Resource,
 	on_change: Callable,
@@ -875,7 +875,7 @@ static func _create_structured_array_inline(
 	if elem_script == null:
 		return _create_array_editor_fallback(col, value, resource, on_change)
 
-	var element_columns: Array[GRDPropertyColumn] = GRDPropertyColumn.from_script(elem_script)
+	var element_columns: Array[GRDColumn] = GRDColumn.from_script(elem_script)
 	if element_columns.is_empty():
 		return _create_array_editor_fallback(col, value, resource, on_change)
 
@@ -911,10 +911,10 @@ static func _emit_structured_array_change(
 
 static func _rebuild_structured_array_inline(
 	container: VBoxContainer,
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	elem_script: Script,
 	working_elements: Array[Resource],
-	element_columns: Array[GRDPropertyColumn],
+	element_columns: Array[GRDColumn],
 	template_value: Variant,
 	database_asset: GRDDatabaseAsset,
 	on_change: Callable,
@@ -1010,11 +1010,11 @@ static func _rebuild_structured_array_inline(
 ## Appends a compact "+ Add Row" button to a container.
 static func _add_inline_add_button(
 	parent: HBoxContainer,
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	elem_script: Script,
 	working_elements: Array[Resource],
 	container: VBoxContainer,
-	element_columns: Array[GRDPropertyColumn],
+	element_columns: Array[GRDColumn],
 	template_value: Variant,
 	database_asset: GRDDatabaseAsset,
 	on_change: Callable,
@@ -1034,16 +1034,16 @@ static func _add_inline_add_button(
 	parent.add_child(add_btn)
 
 
-static func _uses_nested_cell_card_layout(element_columns: Array[GRDPropertyColumn]) -> bool:
+static func _uses_nested_cell_card_layout(element_columns: Array[GRDColumn]) -> bool:
 	for col in element_columns:
-		if col.is_array() and col.element_script != null and _script_inherits_named(col.element_script, "GRDCellResource"):
+		if col.is_array() and col.element_script != null and _script_inherits_named(col.element_script, "GRDCellSchema"):
 			return true
 		if col.is_resource_reference() and _is_cell_resource_type(col.get_resource_type()):
 			return true
 	return false
 
 
-static func _array_item_label(col: GRDPropertyColumn, elem_script: Script) -> String:
+static func _array_item_label(col: GRDColumn, elem_script: Script) -> String:
 	var label: String = String(col.name)
 	if label.ends_with("ies"):
 		label = label.substr(0, label.length() - 3) + "y"
@@ -1057,7 +1057,7 @@ static func _array_item_label(col: GRDPropertyColumn, elem_script: Script) -> St
 static func _build_structured_card_row(
 	parent: VBoxContainer,
 	elem: Resource,
-	element_columns: Array[GRDPropertyColumn],
+	element_columns: Array[GRDColumn],
 	database_asset: GRDDatabaseAsset,
 	item_label: String,
 	item_index: int,
@@ -1162,7 +1162,7 @@ static func _queue_structured_array_layout_refresh(container: VBoxContainer) -> 
 
 ## Fallback for arrays that can't use structured inline editing.
 static func _create_array_editor_fallback(
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	value: Variant,
 	resource: Resource,
 	on_change: Callable,
@@ -1193,7 +1193,7 @@ static func _create_array_editor_fallback(
 
 ## Opens a popup with a table-based editor for typed Resource arrays.
 static func _open_structured_array_popup(
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	value: Variant,
 	resource: Resource,
 	on_change: Callable,
@@ -1205,7 +1205,7 @@ static func _open_structured_array_popup(
 		_open_array_edit_popup(col, value, resource, on_change)
 		return
 
-	var element_columns: Array[GRDPropertyColumn] = GRDPropertyColumn.from_script(elem_script)
+	var element_columns: Array[GRDColumn] = GRDColumn.from_script(elem_script)
 	if element_columns.is_empty():
 		_open_array_edit_popup(col, value, resource, on_change)
 		return
@@ -1297,7 +1297,7 @@ static func _open_structured_array_popup(
 
 
 ## Appends structured table header cells to a GridContainer.
-static func _build_structured_header(grid: GridContainer, element_columns: Array[GRDPropertyColumn]) -> void:
+static func _build_structured_header(grid: GridContainer, element_columns: Array[GRDColumn]) -> void:
 	var row_cells: Array[PanelContainer] = []
 	var drag_spacer: Control = Control.new()
 	drag_spacer.custom_minimum_size.y = _compact_control_height()
@@ -1332,7 +1332,7 @@ static func _build_structured_header(grid: GridContainer, element_columns: Array
 static func _rebuild_structured_rows(
 	rows_container: GridContainer,
 	working_elements: Array[Resource],
-	element_columns: Array[GRDPropertyColumn],
+	element_columns: Array[GRDColumn],
 	database_asset: GRDDatabaseAsset,
 ) -> void:
 	for child in rows_container.get_children():
@@ -1365,7 +1365,7 @@ static func _rebuild_structured_rows(
 static func _build_structured_row(
 	grid: GridContainer,
 	elem: Resource,
-	element_columns: Array[GRDPropertyColumn],
+	element_columns: Array[GRDColumn],
 	database_asset: GRDDatabaseAsset,
 	row_index: int,
 	on_move: Callable,
@@ -1459,7 +1459,7 @@ static func _inline_table_min_height() -> int:
 ## Creates an inline editor for a single property within a structured array row.
 static func _create_structured_cell_editor(
 	elem: Resource,
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	database_asset: GRDDatabaseAsset,
 	on_element_changed: Callable = Callable(),
 ) -> Control:
@@ -1497,7 +1497,7 @@ static func _create_structured_cell_editor(
 	return read_only_label(str(current_value) if current_value != null else "")
 
 
-static func _create_structured_cell_resource_editor(elem: Resource, col: GRDPropertyColumn, current_value: Variant, database_asset: GRDDatabaseAsset, on_element_changed: Callable = Callable()) -> Control:
+static func _create_structured_cell_resource_editor(elem: Resource, col: GRDColumn, current_value: Variant, database_asset: GRDDatabaseAsset, on_element_changed: Callable = Callable()) -> Control:
 	return _create_cell_resource_editor(col, current_value, func(new_value: Variant) -> void:
 		elem.set(String(col.name), new_value)
 		if on_element_changed.is_valid():
@@ -1530,7 +1530,7 @@ static func _create_structured_bool_editor(
 
 
 static func _create_structured_numeric_editor(
-	elem: Resource, col: GRDPropertyColumn, prop_name: String, current_value: Variant,
+	elem: Resource, col: GRDColumn, prop_name: String, current_value: Variant,
 	on_element_changed: Callable = Callable(),
 ) -> Control:
 	var spin: SpinBox = SpinBox.new()
@@ -1558,7 +1558,7 @@ static func _create_structured_numeric_editor(
 
 
 static func _create_structured_string_editor(
-	elem: Resource, col: GRDPropertyColumn, prop_name: String, current_value: Variant,
+	elem: Resource, col: GRDColumn, prop_name: String, current_value: Variant,
 	on_element_changed: Callable = Callable(),
 ) -> Control:
 	var edit: LineEdit = LineEdit.new()
@@ -1593,7 +1593,7 @@ static func _create_structured_string_editor(
 
 
 static func _create_structured_file_path_editor(
-	elem: Resource, col: GRDPropertyColumn, prop_name: String, current_value: Variant,
+	elem: Resource, col: GRDColumn, prop_name: String, current_value: Variant,
 	on_element_changed: Callable = Callable(),
 ) -> Control:
 	var stored_value: String = str(current_value) if current_value != null else ""
@@ -1629,7 +1629,7 @@ static func _sync_line_edit_tooltip(edit: LineEdit) -> void:
 
 
 static func _create_structured_enum_editor(
-	elem: Resource, col: GRDPropertyColumn, prop_name: String, current_value: Variant,
+	elem: Resource, col: GRDColumn, prop_name: String, current_value: Variant,
 	on_element_changed: Callable = Callable(),
 ) -> Control:
 	var opts: PackedStringArray = col.get_enum_values()
@@ -1672,7 +1672,7 @@ static func _create_structured_enum_editor(
 ## Resource reference property (e.g. stat: StatsSchema → IDs from stats table).
 static func _create_id_select_editor(
 	elem: Resource,
-	col: GRDPropertyColumn,
+	col: GRDColumn,
 	current_value: Variant,
 	database_asset: GRDDatabaseAsset,
 	on_element_changed: Callable = Callable(),
@@ -1728,16 +1728,16 @@ static func _create_id_select_editor(
 # Structured array helpers
 # ---------------------------------------------------------------------------
 
-static func _get_structured_col_width(ec: GRDPropertyColumn) -> int:
+static func _get_structured_col_width(ec: GRDColumn) -> int:
 	var header_width: int = _structured_header_width(ec)
 	return max(GRDTheme.scaled_int(STRUCTURED_COL_WIDTH), header_width)
 
 
-static func _structured_header_width(ec: GRDPropertyColumn) -> int:
+static func _structured_header_width(ec: GRDColumn) -> int:
 	return GRDTheme.scaled_int(ec.get_display_name().length() * STRUCTURED_HEADER_CHAR_WIDTH + STRUCTURED_HEADER_PADDING)
 
 
-## Returns all IDs from tables whose row_script global name matches type_name.
+## Returns all IDs from tables whose schema global name matches type_name.
 static func _get_available_ids_for_type(
 	db_asset: GRDDatabaseAsset, type_name: String,
 ) -> PackedStringArray:
@@ -1756,9 +1756,9 @@ static func _get_reference_cache(db_asset: GRDDatabaseAsset, type_name: String) 
 	var ids: PackedStringArray = PackedStringArray()
 	var by_id: Dictionary = {}
 	for ta in db_asset.tables:
-		if ta == null or ta.row_script == null:
+		if ta == null or ta.schema == null:
 			continue
-		var script_name: String = ta.row_script.get_global_name()
+		var script_name: String = ta.schema.get_global_name()
 		if script_name == type_name:
 			var id_field: StringName = ta.get_id_field()
 			for row_res in ta.rows:
@@ -1849,13 +1849,13 @@ static func _make_icon_thumbnail(texture: Texture2D) -> Texture2D:
 
 
 static func _is_row_schema_type(type_name: String) -> bool:
-	var script: Script = GRDPropertyColumn._resolve_class_script(type_name)
-	return _script_inherits_named(script, "GRDRowSchema")
+	var script: Script = GRDColumn._resolve_class_script(type_name)
+	return _script_inherits_named(script, "GRDTableSchema")
 
 
 static func _is_cell_resource_type(type_name: String) -> bool:
-	var script: Script = GRDPropertyColumn._resolve_class_script(type_name)
-	return _script_inherits_named(script, "GRDCellResource")
+	var script: Script = GRDColumn._resolve_class_script(type_name)
+	return _script_inherits_named(script, "GRDCellSchema")
 
 
 static func _get_assignable_scripts(base_script: Script) -> Array[Script]:
@@ -1914,7 +1914,7 @@ static func read_only_label(text: String) -> Label:
 
 ## Shared core: builds a compact, useful summary for a Variant value.
 ## Shows script class names for Resources, exported properties for
-## GRDCellResource instances, id fields for referenced resources, and
+## GRDCellSchema instances, id fields for referenced resources, and
 ## truncated array summaries. `seen` prevents infinite recursion from cycles.
 static func _format_resource_summary(value: Variant, seen: Dictionary = {}) -> String:
 	if value == null:
@@ -1922,8 +1922,8 @@ static func _format_resource_summary(value: Variant, seen: Dictionary = {}) -> S
 	if value is Resource:
 		var r: Resource = value as Resource
 		var class_label: String = _resource_display_name(r)
-		# GRDCellResource → class name + exported properties.
-		if r is GRDCellResource:
+		# GRDCellSchema → class name + exported properties.
+		if r is GRDCellSchema:
 			var instance_id: int = r.get_instance_id()
 			if seen.has(instance_id):
 				return "%s[cycle]" % class_label
@@ -1965,11 +1965,11 @@ static func _resource_display_name(r: Resource) -> String:
 	return r.get_class()
 
 
-## Builds a compact exported-property summary for a GRDCellResource.
+## Builds a compact exported-property summary for a GRDCellSchema.
 ## Example output: stats=[...], flat=0.0, percent=0.1
 static func _cell_resource_props_summary(r: Resource, seen: Dictionary) -> String:
 	var parts: PackedStringArray = PackedStringArray()
-	var cols: Array[GRDPropertyColumn] = _get_cell_resource_columns(r)
+	var cols: Array[GRDColumn] = _get_cell_resource_columns(r)
 	for col in cols:
 		var val: Variant = r.get(String(col.name)) if r.has_method("get") else null
 		var val_str: String = _summarize_property_value(val, col, seen)
@@ -1978,8 +1978,8 @@ static func _cell_resource_props_summary(r: Resource, seen: Dictionary) -> Strin
 
 
 ## Summarizes a single property value for compact display within a
-## GRDCellResource property list.
-static func _summarize_property_value(value: Variant, col: GRDPropertyColumn, seen: Dictionary) -> String:
+## GRDCellSchema property list.
+static func _summarize_property_value(value: Variant, col: GRDColumn, seen: Dictionary) -> String:
 	if value == null:
 		return "null"
 	# Resource reference → show id if available, else full summary.
@@ -2006,7 +2006,7 @@ static func _summarize_property_value(value: Variant, col: GRDPropertyColumn, se
 	return str(value)
 
 
-## Compact array summary for property display within GRDCellResource.
+## Compact array summary for property display within GRDCellSchema.
 static func _compact_array_summary(arr: Array, seen: Dictionary) -> String:
 	if arr.is_empty():
 		return "[]"
@@ -2038,7 +2038,7 @@ static func _dict_summary(value: Variant) -> String:
 	return str(value) if value != null else "(null)"
 
 
-static func _array_summary(value: Variant, col: GRDPropertyColumn) -> String:
+static func _array_summary(value: Variant, col: GRDColumn) -> String:
 	if not (value is Array):
 		return str(value) if value != null else "(null)"
 	var arr: Array = value as Array

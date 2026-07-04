@@ -6,6 +6,7 @@ var _last_db_path: String = ""
 
 const _METADATA_SECTION := "godot_resource_database"
 const _LAST_DB_METADATA_KEY := "last_database_path"
+const _PLUGIN_DIR := "godot-resource-database"
 
 
 func _enter_tree() -> void:
@@ -25,6 +26,7 @@ func _create_panel() -> void:
 	_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_panel.refresh_plugin_requested.connect(_on_refresh_plugin_requested)
+	_panel.create_script_requested.connect(_on_create_script_requested)
 	_panel.visible = false
 	var main_screen: Control = EditorInterface.get_editor_main_screen()
 	main_screen.add_child(_panel)
@@ -57,7 +59,7 @@ func _get_plugin_name() -> String:
 
 
 func _get_plugin_icon() -> Texture2D:
-	return preload("res://addons/godot-resource-database/icon_tab.svg")
+	return load("res://addons/godot-resource-database/icon_tab.svg") as Texture2D
 
 
 func _make_visible(visible: bool) -> void:
@@ -70,10 +72,17 @@ func _make_visible(visible: bool) -> void:
 func _on_refresh_plugin_requested(db_path: String) -> void:
 	_last_db_path = db_path
 	_save_last_db_path(_last_db_path)
-	_destroy_panel()
-	call_deferred("_create_panel")
-	if EditorInterface.has_method("set_main_screen_editor"):
-		EditorInterface.call_deferred("set_main_screen_editor", _get_plugin_name())
+	EditorInterface.call_deferred("set_plugin_enabled", _PLUGIN_DIR, false)
+	EditorInterface.call_deferred("set_plugin_enabled", _PLUGIN_DIR, true)
+	EditorInterface.call_deferred("set_main_screen_editor", _get_plugin_name())
+
+
+func _on_create_script_requested(base_type: String, default_path: String) -> void:
+	var dialog := get_script_create_dialog()
+	if dialog == null:
+		return
+	dialog.config(base_type, default_path)
+	dialog.popup_centered()
 
 
 func _load_last_db_path() -> String:
