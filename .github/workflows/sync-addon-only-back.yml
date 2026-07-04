@@ -1,0 +1,60 @@
+name: Sync addon-only branch back
+
+on:
+  push:
+    branches:
+      - "addon-only/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-addon-only-back-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  sync-back:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync addon-only branch back to source branch
+        run: |
+          set -euo pipefail
+
+          addon_branch="${GITHUB_REF_NAME}"
+          src_branch="${addon_branch#addon-only/}"
+
+          git ls-remote --exit-code --heads origin "${src_branch}"
+          git fetch origin "${src_branch}"
+
+          addon_dir="$(mktemp -d)"
+          source_parent="$(mktemp -d)"
+          source_dir="${source_parent}/source"
+
+          git archive HEAD | tar -x -C "${addon_dir}"
+          git worktree add "${source_dir}" "origin/${src_branch}"
+
+          rsync -a --delete \
+            --exclude='.github/' \
+            --exclude='.gitignore' \
+            --exclude='.godot/' \
+            --exclude='*.uid' \
+            --exclude='*.import' \
+            "${addon_dir}/" \
+            "${source_dir}/addons/godot-resource-database/"
+
+          cd "${source_dir}"
+          git add addons/godot-resource-database
+
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync ${addon_branch} changes back to ${src_branch}"
+          git push origin "HEAD:${src_branch}"
