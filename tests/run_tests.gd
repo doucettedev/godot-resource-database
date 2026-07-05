@@ -791,7 +791,7 @@ func _test_csharp_constants_generation() -> void:
 	var table := GRDTableAsset.new()
 	table.table_name = &"items"
 	table.id_field = &"id"
-	table.row_script = TypedTestRow.new().get_script()
+	table.schema = TypedTestRow.new().get_script()
 
 	var sword := TypedTestRow.new()
 	sword.id = &"sword"

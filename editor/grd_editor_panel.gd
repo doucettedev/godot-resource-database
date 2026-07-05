@@ -76,6 +76,7 @@ const _MENU_DELETE_TABLE: int = 12
 const _MENU_GENERATE_CONSTANTS: int = 20
 const _MENU_GENERATE_TABLE_SCRIPT: int = 21
 const _MENU_GENERATE_CELL_SCRIPT: int = 22
+const _MENU_GENERATE_CSHARP_CONSTANTS: int = 23
 const _MENU_REFRESH: int = 30
 
 const _CSHARP_KEYWORDS := {
@@ -217,6 +218,7 @@ func _build_actions_menu() -> void:
 	])
 	_add_submenu(popup, "Generate", "GenerateMenu", [
 		{"label": "GDScript Constants", "id": _MENU_GENERATE_CONSTANTS},
+		{"label": "C# Constants", "id": _MENU_GENERATE_CSHARP_CONSTANTS},
 		{
 			"label": "Table Schema Script...",
 			"id": _MENU_GENERATE_TABLE_SCRIPT,
@@ -844,6 +846,8 @@ func _on_actions_menu_id_pressed(id: int) -> void:
 			_on_delete_table_pressed()
 		_MENU_GENERATE_CONSTANTS:
 			_on_generate_constants_pressed()
+		_MENU_GENERATE_CSHARP_CONSTANTS:
+			_on_generate_csharp_constants_pressed()
 		_MENU_GENERATE_TABLE_SCRIPT:
 			_request_script_creation("GRDTableSchema", _default_generated_script_path("table"))
 		_MENU_GENERATE_CELL_SCRIPT:
@@ -1468,6 +1472,23 @@ func _on_generate_constants_pressed() -> void:
 	_set_status("Generated constants: %s" % out_path, false)
 
 
+func _on_generate_csharp_constants_pressed() -> void:
+	if _db_asset == null or _db_asset_path.is_empty():
+		_set_status("No database loaded.", true)
+		return
+
+	var out_path := _db_asset_path.get_basename() + ".cs"
+	var source := _build_csharp_constants_source(_db_asset, _db_asset_path)
+	var file := FileAccess.open(out_path, FileAccess.WRITE)
+	if file == null:
+		_set_status("Failed to write C# constants: %s" % out_path, true)
+		return
+
+	file.store_string(source)
+	EditorInterface.get_resource_filesystem().scan()
+	_set_status("Generated C# constants: %s" % out_path, false)
+
+
 func _request_script_creation(base_type: String, default_path: String) -> void:
 	create_script_requested.emit(base_type, default_path)
 	_set_status("Creating %s script..." % base_type, false)
@@ -1553,6 +1574,10 @@ static func _build_csharp_constants_source(db_asset: GRDDatabaseAsset, db_path: 
 		"Table": true,
 	}
 
+	# Typed generation data collected during main loop.
+	var typed_tables: Array[Dictionary] = []
+	var nested_cells: Array[Dictionary] = []
+
 	lines.append("// Generated from %s. Do not edit by hand." % db_path)
 	lines.append("using Godot;")
 	lines.append("")
@@ -1574,6 +1599,7 @@ static func _build_csharp_constants_source(db_asset: GRDDatabaseAsset, db_path: 
 			"TABLE": true,
 			"ID_FIELD": true,
 			"Id": true,
+			"Typed": true,
 		}
 		var id_constants := _csharp_row_id_constants(table)
 
@@ -1584,7 +1610,7 @@ static func _build_csharp_constants_source(db_asset: GRDDatabaseAsset, db_path: 
 		lines.append("        public static readonly StringName TABLE = \"%s\";" % _csharp_escape_string(String(table.table_name)))
 		lines.append("        public static readonly StringName ID_FIELD = \"%s\";" % _csharp_escape_string(String(table.get_id_field())))
 
-		for column: GRDPropertyColumn in table.get_property_columns():
+		for column: GRDColumn in table.get_property_columns():
 			if column == null or column.name == &"":
 				continue
 			var column_result := _csharp_unique_identifier(
@@ -1605,9 +1631,72 @@ static func _build_csharp_constants_source(db_asset: GRDDatabaseAsset, db_path: 
 				lines.append("            public static readonly StringName %s = \"%s\";" % [item["name"], _csharp_escape_string(item["value"])])
 			lines.append("        }")
 
+		# Typed accessor — preserves Database.Table / Database.Row compatibility.
+		lines.append("")
+		lines.append("        public static %sTable Typed => new(Database.Table(TABLE));" % table_class)
+
 		lines.append("    }")
 		lines.append("")
 
+		# Collect row column info for typed generation.
+		var row_columns: Array[Dictionary] = []
+		var columns := table.get_property_columns()
+		for col: GRDColumn in columns:
+			if col == null or col.name == &"":
+				continue
+			var prop_result := _csharp_unique_identifier(
+				_csharp_pascal_identifier(String(col.name), "Field"),
+				used_constants,
+			)
+			var type_info := _csharp_column_type_info(col)
+			row_columns.append({
+				"cs_name": prop_result["name"],
+				"col": col,
+				"sanitized": prop_result["sanitized"],
+				"cs_type": type_info["cs_type"],
+				"cs_cast": type_info["cs_cast"],
+				"is_nested_cell": type_info.get("is_nested_cell", false),
+			})
+
+			# Collect nested cell info for resource/schema columns.
+			if type_info.get("is_nested_cell", false):
+				var resource_type_name: String = col.hint_string.strip_edges()
+				var cell_script := _resolve_csharp_class_script(resource_type_name)
+				if cell_script != null:
+					var nested_columns := GRDColumn.from_script(cell_script)
+					if not nested_columns.is_empty():
+						var nested_used: Dictionary = {}
+						var nested_row_cols: Array[Dictionary] = []
+						for ncol: GRDColumn in nested_columns:
+							if ncol == null or ncol.name == &"":
+								continue
+							var ncr := _csharp_unique_identifier(
+								_csharp_pascal_identifier(String(ncol.name), "Field"),
+								nested_used,
+							)
+							var nti := _csharp_column_type_info(ncol)
+							nested_row_cols.append({
+								"cs_name": ncr["name"],
+								"col": ncol,
+								"sanitized": ncr["sanitized"],
+								"cs_type": nti["cs_type"],
+								"cs_cast": nti["cs_cast"],
+							})
+						var cell_class_name: String = table_class + String(prop_result["name"]) + "Cell"
+						nested_cells.append({
+							"cell_class": cell_class_name,
+							"parent_table": table_class,
+							"prop_name": prop_result["name"],
+							"prop_path": String(col.name),
+							"columns": nested_row_cols,
+						})
+
+		typed_tables.append({
+			"table_class": table_class,
+			"row_columns": row_columns,
+		})
+
+	# Close Database class.
 	lines.append("    private static readonly GDScript Script =")
 	lines.append("        GD.Load<GDScript>(\"%s\");" % _csharp_escape_string(db_path.get_basename() + ".gd"))
 	lines.append("")
@@ -1621,6 +1710,63 @@ static func _build_csharp_constants_source(db_asset: GRDDatabaseAsset, db_path: 
 	lines.append("        return Table(table).Call(\"get_row\", id).AsGodotObject();")
 	lines.append("    }")
 	lines.append("}")
+	lines.append("")
+
+	# Emit typed table and row classes.
+	for tdata in typed_tables:
+		var tc: String = tdata["table_class"]
+		var rcs: Array = tdata["row_columns"]
+
+		lines.append("public sealed class %sTable : GrdTable<%sRow>" % [tc, tc])
+		lines.append("{")
+		lines.append("    public %sTable(GodotObject inner) : base(inner, row => new %sRow(row)) { }" % [tc, tc])
+		lines.append("}")
+		lines.append("")
+
+		lines.append("public sealed class %sRow : GrdRow" % tc)
+		lines.append("{")
+		lines.append("    public %sRow(GodotObject inner) : base(inner) { }" % tc)
+		lines.append("")
+		for rc: Dictionary in rcs:
+			var col: GRDColumn = rc["col"]
+			var cs_name: String = rc["cs_name"]
+			var cs_type: String = rc["cs_type"]
+			var sanitized: bool = rc["sanitized"]
+			var is_nested: bool = rc.get("is_nested_cell", false)
+			if sanitized:
+				lines.append("    // Identifier sanitized from \"%s\"." % _csharp_escape_string(String(col.name)))
+			if is_nested:
+				for nc: Dictionary in nested_cells:
+					if nc["parent_table"] == tc and nc["prop_name"] == cs_name:
+						lines.append("    public %s %s => new(this, \"%s\");" % [nc["cell_class"], cs_name, nc["prop_path"]])
+						break
+			else:
+				lines.append("    public %s %s => %s(\"%s\");" % [cs_type, cs_name, rc["cs_cast"], _csharp_escape_string(String(col.name))])
+		lines.append("}")
+		lines.append("")
+
+	# Emit nested cell wrapper classes.
+	for nc: Dictionary in nested_cells:
+		var cell_class: String = nc["cell_class"]
+		var cols: Array = nc["columns"]
+		lines.append("public sealed class %s" % cell_class)
+		lines.append("{")
+		lines.append("    private readonly GrdRow _row;")
+		lines.append("    private readonly string _prefix;")
+		lines.append("")
+		lines.append("    public %s(GrdRow row, string prefix)" % cell_class)
+		lines.append("    {")
+		lines.append("        _row = row;")
+		lines.append("        _prefix = prefix;")
+		lines.append("    }")
+		lines.append("")
+		for c: Dictionary in cols:
+			var col_name: String = String(c["col"].name)
+			if c["sanitized"]:
+				lines.append("    // Identifier sanitized from \"%s\"." % _csharp_escape_string(col_name))
+			lines.append("    public %s %s => _row.%s(_prefix + \".%s\");" % [c["cs_type"], c["cs_name"], c["cs_cast"], _csharp_escape_string(col_name)])
+		lines.append("}")
+		lines.append("")
 
 	return "\n".join(lines) + "\n"
 
@@ -1698,6 +1844,15 @@ static func _constant_identifier(value: String, fallback: String) -> String:
 	if _starts_with_digit(result):
 		result = fallback + "_" + result
 	return result
+
+
+static func _csharp_constant_identifier(value: String, fallback: String) -> Dictionary:
+	var name := _constant_identifier(value, fallback)
+	var sanitized := _csharp_source_needs_comment(value)
+	if _is_csharp_keyword(name):
+		name += "_"
+		sanitized = true
+	return {"name": name, "sanitized": sanitized}
 
 
 static func _snake_identifier(value: String, fallback: String) -> String:
@@ -1783,6 +1938,64 @@ static func _escape_string(value: String) -> String:
 
 static func _csharp_escape_string(value: String) -> String:
 	return value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+
+static func _csharp_column_type_info(col: GRDColumn) -> Dictionary:
+	## Returns { "cs_type", "cs_cast", ["is_nested_cell"] } for a GRDColumn.
+	## cs_type is the C# return type; cs_cast is the GrdRow helper method name.
+	match col.type:
+		TYPE_STRING:
+			return { "cs_type": "string", "cs_cast": "GetString" }
+		TYPE_STRING_NAME:
+			return { "cs_type": "StringName", "cs_cast": "GetStringName" }
+		TYPE_INT:
+			return { "cs_type": "int", "cs_cast": "GetInt" }
+		TYPE_FLOAT:
+			return { "cs_type": "float", "cs_cast": "GetFloat" }
+		TYPE_BOOL:
+			return { "cs_type": "bool", "cs_cast": "GetBool" }
+		TYPE_VECTOR3:
+			return { "cs_type": "Vector3", "cs_cast": "GetVector3" }
+		TYPE_OBJECT:
+			if col.hint == PROPERTY_HINT_RESOURCE_TYPE:
+				var resource_type: String = col.hint_string.strip_edges()
+				if not resource_type.is_empty() and resource_type != "Script" and resource_type != "Resource":
+					var script := _resolve_csharp_class_script(resource_type)
+					if script != null and _script_extends_schema(script):
+						return { "cs_type": resource_type, "cs_cast": "GetGodotObject", "is_nested_cell": true }
+					return { "cs_type": resource_type + "?", "cs_cast": "GetResource<%s>" % resource_type }
+				return { "cs_type": "Resource?", "cs_cast": "GetResource<Resource>" }
+			return { "cs_type": "GodotObject?", "cs_cast": "GetGodotObject" }
+		TYPE_ARRAY:
+			return { "cs_type": "Godot.Collections.Array", "cs_cast": "GetArray" }
+		TYPE_DICTIONARY:
+			return { "cs_type": "Godot.Collections.Dictionary", "cs_cast": "GetDictionary" }
+		_:
+			return { "cs_type": "Variant", "cs_cast": "GetVariant" }
+
+
+static func _resolve_csharp_class_script(class_name_str: String) -> Script:
+	## Resolves a global class name to its Script via ProjectSettings.
+	if class_name_str.is_empty():
+		return null
+	for gcls in ProjectSettings.get_global_class_list():
+		if gcls.get("class", "") == class_name_str:
+			var path: String = gcls.get("path", "")
+			if not path.is_empty():
+				var loaded = load(path)
+				if loaded is Script:
+					return loaded as Script
+	return null
+
+
+static func _script_extends_schema(script: Script) -> bool:
+	## Returns true when the script extends GRDTableSchema or GRDCellSchema.
+	while script != null:
+		var global_name: String = script.get_global_name()
+		if global_name == "GRDTableSchema" or global_name == "GRDCellSchema":
+			return true
+		script = script.get_base_script()
+	return false
 
 
 # ---------------------------------------------------------------------------
