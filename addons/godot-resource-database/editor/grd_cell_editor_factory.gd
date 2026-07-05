@@ -75,6 +75,7 @@ const EDITABLE_SCALAR_TYPES: Array[int] = [
 static var _reference_cache: Dictionary = {}
 static var _thumbnail_cache: Dictionary = {}
 static var _assignable_scripts_cache: Dictionary = {}
+static var _uid_path_cache: Dictionary = {}
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +86,7 @@ static func clear_caches() -> void:
 	_reference_cache.clear()
 	_thumbnail_cache.clear()
 	_assignable_scripts_cache.clear()
+	_uid_path_cache.clear()
 
 
 ## Creates an appropriate inline control for a cell based on GRDColumn.
@@ -309,7 +311,7 @@ static func _create_file_path_editor(col: GRDColumn, value: Variant, on_change: 
 static func _file_path_display_value(col: GRDColumn, value: String) -> String:
 	if col.is_global_file_path() or value.is_empty():
 		return value
-	return ResourceUID.ensure_path(value)
+	return _project_file_path_display_value(value)
 
 
 static func _file_path_storage_value(col: GRDColumn, value: String) -> String:
@@ -329,6 +331,73 @@ static func project_file_path_storage_value(value: String) -> String:
 		var converted_id: int = int(converted)
 		return ResourceUID.id_to_text(converted_id) if converted_id != ResourceUID.INVALID_ID else value
 	return value
+
+
+static func _project_file_path_display_value(value: String) -> String:
+	if value.is_empty() or not value.begins_with("uid://"):
+		return value
+	var resolved_path := _resolve_project_uid_path(value)
+	return resolved_path if not resolved_path.is_empty() else value
+
+
+static func _resolve_project_uid_path(uid_text: String) -> String:
+	if _uid_path_cache.has(uid_text):
+		return String(_uid_path_cache[uid_text])
+
+	var uid := ResourceUID.text_to_id(uid_text)
+	if uid == ResourceUID.INVALID_ID:
+		_uid_path_cache[uid_text] = ""
+		return ""
+
+	if ResourceUID.has_id(uid):
+		var path := ResourceUID.get_id_path(uid)
+		_uid_path_cache[uid_text] = path
+		return path
+
+	# ponytail: scans project files only when Godot has not registered a stored UID yet;
+	# upgrade to EditorFileSystem metadata if this becomes hot on very large projects.
+	var scanned_path := _find_resource_path_with_uid("res://", uid_text)
+	_uid_path_cache[uid_text] = scanned_path
+	return scanned_path
+
+
+static func _find_resource_path_with_uid(root_path: String, uid_text: String) -> String:
+	var dir := DirAccess.open(root_path)
+	if dir == null:
+		return ""
+
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while not entry.is_empty():
+		if entry.begins_with("."):
+			entry = dir.get_next()
+			continue
+
+		var path := root_path.path_join(entry)
+		if dir.current_is_dir():
+			var nested := _find_resource_path_with_uid(path, uid_text)
+			if not nested.is_empty():
+				return nested
+		elif _resource_file_has_uid(path, uid_text):
+			return path
+
+		entry = dir.get_next()
+
+	return ""
+
+
+static func _resource_file_has_uid(path: String, uid_text: String) -> bool:
+	if not (path.ends_with(".tscn") or path.ends_with(".tres")):
+		return false
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return false
+	for i in range(8):
+		if file.eof_reached():
+			break
+		if file.get_line().contains('uid="%s"' % uid_text):
+			return true
+	return false
 
 
 static func _sync_file_path_tooltip(edit: LineEdit, col: GRDColumn, stored_value: String) -> void:
