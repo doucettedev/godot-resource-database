@@ -99,6 +99,7 @@ func _run_all_tests() -> void:
 	_test_resource_cell_editor_enum()
 	_test_resource_cell_editor_resource_ref()
 	_test_resource_cell_editor_array()
+	_test_spreadsheet_long_header_width()
 	_test_resource_cell_editor_dictionary()
 	_test_resource_cell_editor_property_column_integration()
 	_test_resource_cell_editor_unlimited_nested_cell_resource_summary()
@@ -1052,17 +1053,93 @@ func _test_resource_cell_editor_resource_ref() -> void:
 
 
 func _test_resource_cell_editor_array() -> void:
-	print("\n[ResourceCellEditor: array]")
-	var arr_col := GRDColumn.new()
-	arr_col.name = &"tags"
-	arr_col.type = TYPE_ARRAY
+	print("\n[ResourceCellEditor: inline typed arrays]")
+	var columns: Dictionary = {}
+	for col in GRDColumn.from_script(TypedTestRow.new().get_script()):
+		columns[col.name] = col
+
 	var changed_val: Variant = null
-	var on_change := func(v: Variant) -> void: changed_val = v
-	var ctrl := GRDCellEditorFactory.create_cell_editor(arr_col, ["a", "b"], null, on_change)
-	_assert(ctrl != null, "Array editor created")
-	_assert(ctrl is HBoxContainer, "Array editor is HBoxContainer")
-	var hbox: HBoxContainer = ctrl as HBoxContainer
-	_assert_eq(hbox.get_child_count(), 2, "Array editor has label + button")
+	var tags: Array[String] = ["a", "b"]
+	var ctrl := GRDCellEditorFactory.create_cell_editor(columns[&"tags"], tags, null, func(v: Variant) -> void: changed_val = v)
+	_assert(ctrl is VBoxContainer, "String array uses inline row container")
+	_assert_eq(ctrl.get_child_count(), 3, "String array has one row per element and Add footer")
+	_assert(_control_tree_contains_text(ctrl, "+ Add"), "Scalar array has Add footer")
+	var first_text := _find_control(ctrl, "LineEdit") as LineEdit
+	_assert(first_text != null, "String array row uses LineEdit")
+	_assert_eq(tags.get_typed_builtin(), TYPE_STRING, "String array retains typed metadata")
+
+	var floats: Array[float] = [1.5, 3.0]
+	changed_val = null
+	ctrl = GRDCellEditorFactory.create_cell_editor(columns[&"spawn_times_minutes"], floats, null, func(v: Variant) -> void: changed_val = v)
+	var spin := _find_control(ctrl, "SpinBox") as SpinBox
+	_assert(spin != null, "Array[float] renders numeric fields directly")
+	_assert_eq(floats.get_typed_builtin(), TYPE_FLOAT, "Float array retains typed metadata")
+
+	var names: Array[StringName] = [&"alpha"]
+	changed_val = null
+	ctrl = GRDCellEditorFactory.create_cell_editor(columns[&"aliases"], names, null, func(v: Variant) -> void: changed_val = v)
+	first_text = _find_control(ctrl, "LineEdit") as LineEdit
+	_assert(first_text != null, "StringName array row uses LineEdit")
+	_assert_eq(names.get_typed_builtin(), TYPE_STRING_NAME, "StringName array retains typed metadata")
+
+	var ints: Array[int] = [4]
+	changed_val = null
+	ctrl = GRDCellEditorFactory.create_cell_editor(columns[&"levels"], ints, null, func(v: Variant) -> void: changed_val = v)
+	spin = _find_control(ctrl, "SpinBox") as SpinBox
+	_assert(spin != null, "Integer array row uses SpinBox")
+
+	var ordered_ints: Array[int] = [2, 1]
+	var reorder_state := {"value": null, "callbacks": 0}
+	ctrl = GRDCellEditorFactory.create_cell_editor(columns[&"levels"], ordered_ints, null, func(v: Variant) -> void:
+		reorder_state.value = v
+		reorder_state.callbacks += 1
+	)
+	var first_handle := (ctrl.get_child(0) as Control).get_child(0) as GRDCellEditorFactory.ScalarArrayRowDragHandle
+	var second_handle := (ctrl.get_child(1) as Control).get_child(0) as GRDCellEditorFactory.ScalarArrayRowDragHandle
+	var drag_data: Variant = second_handle._get_drag_data(Vector2.ZERO)
+	_assert(drag_data is Dictionary, "Scalar drag handle provides row drag data")
+	_assert_eq((drag_data as Dictionary).get("from_index"), 1, "Scalar drag data identifies source row")
+	_assert(first_handle._can_drop_data(Vector2.ZERO, drag_data), "Scalar row accepts valid sibling drop")
+	_assert(not second_handle._can_drop_data(Vector2.ZERO, drag_data), "Scalar row rejects drop onto itself")
+	first_handle._drop_data(Vector2.ZERO, drag_data)
+	_assert_eq(reorder_state.value, [1, 2], "Scalar row drop emits reordered array immediately")
+	_assert_eq(reorder_state.callbacks, 1, "Scalar row drop invokes callback once")
+	_assert_eq((reorder_state.value as Array).get_typed_builtin(), TYPE_INT, "Scalar row drop preserves typed metadata")
+	_assert(_find_button(ctrl, "↑") == null and _find_button(ctrl, "↓") == null, "Scalar rows omit obsolete arrow controls")
+
+	var bools: Array[bool] = [false]
+	changed_val = null
+	ctrl = GRDCellEditorFactory.create_cell_editor(columns[&"toggles"], bools, null, func(v: Variant) -> void: changed_val = v)
+	var check := _find_control(ctrl, "CheckBox") as CheckBox
+	_assert(check != null, "Bool array row uses CheckBox")
+
+	changed_val = null
+	ctrl = GRDCellEditorFactory.create_cell_editor(columns[&"levels"], ints, null, func(v: Variant) -> void: changed_val = v)
+	var remove := _find_button(ctrl, "×")
+	remove.pressed.emit()
+	_assert_eq(changed_val.size(), 0, "Remove mutates array immediately")
+	var add := _find_button(ctrl, "+ Add")
+	add.pressed.emit()
+	_assert_eq(changed_val[0], 0, "Add appends typed default immediately")
+	_assert_eq((changed_val as Array).get_typed_builtin(), TYPE_INT, "Add/remove preserve typed metadata")
+
+	var item := NestedTestItem.new()
+	item.label = "kept"
+	var resources: Array[NestedTestItem] = [item]
+	ctrl = GRDCellEditorFactory.create_cell_editor(columns[&"modifiers"], resources, null, func(_v: Variant) -> void: pass)
+	_assert(_control_tree_contains_text(ctrl, "label"), "Structured Resource arrays retain row editor")
+	_assert(_control_tree_contains_text(ctrl, "+ Add Modifier"), "Structured Resource arrays retain Add control")
+
+
+func _test_spreadsheet_long_header_width() -> void:
+	print("\n[Spreadsheet: long header width]")
+	var text := "exceptionally_long_property_header_for_width"
+	var measured := GRDSpreadsheetView.header_text_width(text)
+	_assert(measured > GRDTheme.scaled_int(150), "Long header measurement exceeds default width")
+	var col := {"display": text, "width": 100}
+	_assert(GRDSpreadsheetView._column_display_width(col) >= measured, "Column minimum fits entire measured header")
+	col.width = 500
+	_assert_eq(GRDSpreadsheetView._column_display_width(col), GRDTheme.scaled_int(500), "Larger type-specific width is preserved")
 
 
 func _test_resource_cell_editor_dictionary() -> void:
@@ -1152,6 +1229,28 @@ func _test_resource_cell_editor_unlimited_nested_cell_resource_summary() -> void
 	_assert(_control_tree_contains_text(ctrl, "label"), "Nested GRDCellSchema arrays render structured editors")
 	_assert(_control_tree_contains_text(ctrl, "Container 1"), "Nested GRDCellSchema arrays render parent rows as cards")
 	_assert(_control_tree_contains_text(ctrl, "+ Add Container"), "Nested GRDCellSchema array add button uses item label")
+
+
+func _find_control(ctrl: Control, control_class: String) -> Control:
+	if ctrl.is_class(control_class):
+		return ctrl
+	for child in ctrl.get_children():
+		if child is Control:
+			var found := _find_control(child as Control, control_class)
+			if found != null:
+				return found
+	return null
+
+
+func _find_button(ctrl: Control, text: String) -> Button:
+	if ctrl is Button and (ctrl as Button).text == text:
+		return ctrl as Button
+	for child in ctrl.get_children():
+		if child is Control:
+			var found := _find_button(child as Control, text)
+			if found != null:
+				return found
+	return null
 
 
 func _control_tree_contains_text(ctrl: Control, text: String) -> bool:

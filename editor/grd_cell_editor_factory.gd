@@ -6,7 +6,7 @@ extends RefCounted
 ## derived from Godot exported properties.  No schema/type system dependencies.
 ##
 ## Supports: scalar (String, StringName, int, float, bool), enum hints,
-## Resource refs, Script refs, Array summary + Edit, Dictionary read-only.
+## Resource refs, Script refs, inline typed Arrays, Dictionary read-only.
 ## Changes apply via resource.set(key, value) with emit_changed.
 
 # ---------------------------------------------------------------------------
@@ -17,7 +17,6 @@ const SUMMARY_LENGTH: int = 40
 const ROW_REFERENCE_ICON_SIZE: int = 18
 const SELECT_LABEL_MAX_CHARS: int = 24
 const ICON_SELECT_LABEL_MAX_CHARS: int = 16
-const STRUCTURED_HEADER_CHAR_WIDTH: int = 7
 const STRUCTURED_HEADER_PADDING: int = 18
 const STRUCTURED_COL_WIDTH: int = 96
 const STRUCTURED_ROW_HEIGHT: int = 34
@@ -25,6 +24,40 @@ const INLINE_TABLE_MIN_HEIGHT: int = 114
 const TEXTURE_RESOURCE_CELL_HEIGHT: int = 32
 const RESOURCE_PICKER_COMMIT_POLL_SECONDS: float = 0.15
 const DEFAULT_ROW_REFERENCE_ICON_PROPERTY: StringName = &"icon"
+
+
+class ScalarArrayRowDragHandle:
+	extends Button
+
+	var owner_id: int = 0
+	var row_index: int = -1
+	var on_move: Callable
+
+	func _get_drag_data(_at_position: Vector2) -> Variant:
+		if row_index < 0:
+			return null
+		var preview := Label.new()
+		preview.text = "Move element %d" % row_index
+		GRDTheme.style_label(preview, GRDTheme.FONT_SIZE_SMALL, GRDTheme.TEXT)
+		set_drag_preview(preview)
+		return {
+			"type": "grd_scalar_array_row",
+			"owner_id": owner_id,
+			"from_index": row_index,
+		}
+
+	func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+		if not (data is Dictionary) or row_index < 0:
+			return false
+		var drag_data: Dictionary = data
+		return drag_data.get("type", "") == "grd_scalar_array_row" \
+			and int(drag_data.get("owner_id", -1)) == owner_id \
+			and int(drag_data.get("from_index", -1)) != row_index
+
+	func _drop_data(_at_position: Vector2, data: Variant) -> void:
+		if _can_drop_data(_at_position, data) and on_move.is_valid():
+			var drag_data: Dictionary = data
+			on_move.call(int(drag_data.get("from_index", -1)), row_index)
 
 
 class StructuredRowDragHandle:
@@ -616,29 +649,13 @@ static func _create_array_editor(
 	if _is_structured_array(col, value):
 		return _create_structured_array_inline(col, value, resource, on_change, database_asset)
 
-	# Untyped or unsupported arrays → summary + Edit (JSON popup).
-	var box: HBoxContainer = HBoxContainer.new()
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Scalar typed arrays use one immediate editor per element.
+	var element_type: int = _array_element_type(col, value)
+	if element_type in EDITABLE_SCALAR_TYPES:
+		return _create_scalar_array_inline(col, value, element_type, on_change)
 
-	var summary: Label = Label.new()
-	summary.text = _array_summary(value, col)
-	summary.tooltip_text = _array_detail(value)
-	summary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	summary.clip_text = true
-	GRDTheme.style_label(summary, GRDTheme.FONT_SIZE, GRDTheme.TEXT_MUTED)
-	box.add_child(summary)
-
-	var edit_btn: Button = Button.new()
-	edit_btn.text = "Edit"
-	edit_btn.custom_minimum_size.y = _compact_control_height()
-	edit_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	box.add_child(edit_btn)
-
-	edit_btn.pressed.connect(func() -> void:
-		_open_array_edit_popup(col, value, resource, on_change)
-	)
-
-	return box
+	# Untyped or unsupported arrays retain the safe JSON fallback.
+	return _create_array_editor_fallback(col, value, resource, on_change)
 
 
 ## Opens a popup for editing an Array value.
@@ -705,6 +722,118 @@ static func _open_array_edit_popup(
 	if tree != null and tree.root != null:
 		tree.root.add_child(popup)
 	popup.popup_centered(Vector2i(440, 380))
+
+
+static func _array_element_type(col: GRDColumn, value: Variant) -> int:
+	if value is Array:
+		var typed_builtin: int = (value as Array).get_typed_builtin()
+		if typed_builtin != TYPE_NIL:
+			return typed_builtin
+	var hint: String = col.get_array_element_hint().strip_edges()
+	if hint.is_valid_int():
+		return hint.to_int()
+	var type_prefix: String = hint.get_slice("/", 0).get_slice(":", 0)
+	if type_prefix.is_valid_int():
+		return type_prefix.to_int()
+	var named_types := {
+		"bool": TYPE_BOOL, "int": TYPE_INT, "float": TYPE_FLOAT,
+		"String": TYPE_STRING, "StringName": TYPE_STRING_NAME,
+	}
+	if named_types.has(hint):
+		return named_types[hint]
+	if value is Array and not (value as Array).is_empty():
+		var inferred: int = typeof((value as Array)[0])
+		if inferred in EDITABLE_SCALAR_TYPES:
+			for item in value as Array:
+				if typeof(item) != inferred:
+					return TYPE_NIL
+			return inferred
+	return TYPE_NIL
+
+
+static func _create_scalar_array_inline(col: GRDColumn, value: Variant, element_type: int, on_change: Callable) -> Control:
+	var working: Array = value.duplicate() if value is Array else []
+	var container := VBoxContainer.new()
+	container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rebuild_scalar_array_inline(container, col, working, element_type, on_change)
+	return container
+
+
+static func _rebuild_scalar_array_inline(container: VBoxContainer, col: GRDColumn, working: Array, element_type: int, on_change: Callable) -> void:
+	for child in container.get_children():
+		container.remove_child(child)
+		child.queue_free()
+
+	var element_col := GRDColumn.new()
+	element_col.type = element_type
+	for i in working.size():
+		var idx: int = i
+		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var drag_handle := ScalarArrayRowDragHandle.new()
+		drag_handle.owner_id = container.get_instance_id()
+		drag_handle.row_index = idx
+		drag_handle.on_move = func(from_index: int, to_index: int) -> void:
+			if from_index < 0 or from_index >= working.size():
+				return
+			if to_index < 0 or to_index >= working.size() or from_index == to_index:
+				return
+			var moved: Variant = working[from_index]
+			working.remove_at(from_index)
+			working.insert(to_index, moved)
+			on_change.call(working.duplicate())
+			_rebuild_scalar_array_inline(container, col, working, element_type, on_change)
+		drag_handle.text = "☰"
+		drag_handle.tooltip_text = "Drag to reorder element"
+		drag_handle.focus_mode = Control.FOCUS_NONE
+		drag_handle.mouse_default_cursor_shape = Control.CURSOR_MOVE
+		drag_handle.custom_minimum_size = Vector2(GRDTheme.scaled(28.0), _compact_control_height())
+		GRDTheme.style_button(drag_handle)
+		row.add_child(drag_handle)
+		var editor: Control = create_cell_editor(element_col, working[idx], null, func(new_value: Variant) -> void:
+			working[idx] = new_value
+			on_change.call(working.duplicate())
+		)
+		editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(editor)
+		var remove_btn := Button.new()
+		remove_btn.text = "×"
+		remove_btn.tooltip_text = "Remove element"
+		remove_btn.custom_minimum_size = Vector2(GRDTheme.scaled(28.0), _compact_control_height())
+		GRDTheme.style_button(remove_btn)
+		remove_btn.pressed.connect(func() -> void:
+			working.remove_at(idx)
+			_rebuild_scalar_array_inline(container, col, working, element_type, on_change)
+			on_change.call(working.duplicate())
+		)
+		row.add_child(remove_btn)
+		container.add_child(row)
+
+	var add_btn := Button.new()
+	add_btn.text = "+ Add"
+	add_btn.custom_minimum_size.y = _compact_control_height()
+	GRDTheme.style_button(add_btn)
+	add_btn.pressed.connect(func() -> void:
+		working.append(_default_array_element(element_type))
+		_rebuild_scalar_array_inline(container, col, working, element_type, on_change)
+		on_change.call(working.duplicate())
+	)
+	container.add_child(add_btn)
+
+
+static func _default_array_element(element_type: int) -> Variant:
+	match element_type:
+		TYPE_STRING:
+			return ""
+		TYPE_STRING_NAME:
+			return &""
+		TYPE_INT:
+			return 0
+		TYPE_FLOAT:
+			return 0.0
+		TYPE_BOOL:
+			return false
+	return null
 
 
 # ---------------------------------------------------------------------------
@@ -1734,7 +1863,9 @@ static func _get_structured_col_width(ec: GRDColumn) -> int:
 
 
 static func _structured_header_width(ec: GRDColumn) -> int:
-	return GRDTheme.scaled_int(ec.get_display_name().length() * STRUCTURED_HEADER_CHAR_WIDTH + STRUCTURED_HEADER_PADDING)
+	var font: Font = ThemeDB.fallback_font
+	var font_size: int = max(1, GRDTheme.font_size_tiny() - 3)
+	return int(ceil(font.get_string_size(ec.get_display_name(), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + GRDTheme.scaled(STRUCTURED_HEADER_PADDING)))
 
 
 ## Returns all IDs from tables whose schema global name matches type_name.
