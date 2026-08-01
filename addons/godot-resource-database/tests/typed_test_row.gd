@@ -11,6 +11,11 @@ extends Resource
 @export var damage: float = 0.0
 @export var is_active: bool = true
 @export var tags: Array[String] = []
+@export var aliases: Array[StringName] = []
+@export var levels: Array[int] = []
+@export var spawn_times_minutes: Array[float] = []
+@export var toggles: Array[bool] = []
+@export var exceptionally_long_property_header_for_width: int = 0
 
 ## Enum column — @export_enum gives PROPERTY_HINT_ENUM.
 @export_enum("common", "uncommon", "rare", "epic") var rarity: String = "common"

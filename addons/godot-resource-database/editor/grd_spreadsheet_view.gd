@@ -306,15 +306,15 @@ func _build_header() -> void:
 	var natural_left: float = float(_scaled_row_number_width())
 	for col in _columns:
 		var header_cell: VBoxContainer = VBoxContainer.new()
-		var wrapped_header: PanelContainer = _wrap_grid_cell(header_cell, _scaled_column_width(col.width), true, GRDTheme.BG, _is_sticky_column(col))
+		var wrapped_header: PanelContainer = _wrap_grid_cell(header_cell, _column_display_width(col), true, GRDTheme.BG, _is_sticky_column(col))
 		header_panels.append(wrapped_header)
 		_body.add_child(wrapped_header)
 		if _is_sticky_column(col):
 			_register_sticky_cell(wrapped_header, sticky_left, natural_left, 0.0, 0.0)
-			sticky_left += float(_scaled_column_width(col.width))
+			sticky_left += float(_column_display_width(col))
 		else:
 			_register_sticky_cell(wrapped_header, -1.0, -1.0, 0.0, 0.0)
-		natural_left += float(_scaled_column_width(col.width))
+		natural_left += float(_column_display_width(col))
 
 		var label: Label = Label.new()
 		label.text = col.display
@@ -451,13 +451,13 @@ func _build_row(filtered_idx: int) -> void:
 			cell = _create_read_only_cell(value)
 
 		GRDTheme.apply_tree(cell, false)
-		var wrapped_cell: PanelContainer = _wrap_grid_cell(cell, _scaled_column_width(col.width), false, row_bg, _is_sticky_column(col))
+		var wrapped_cell: PanelContainer = _wrap_grid_cell(cell, _column_display_width(col), false, row_bg, _is_sticky_column(col))
 		_connect_row_selection(wrapped_cell, filtered_idx)
 		_body.add_child(wrapped_cell)
 		if _is_sticky_column(col):
 			_register_sticky_cell(wrapped_cell, sticky_left, natural_left)
-			sticky_left += float(_scaled_column_width(col.width))
-		natural_left += float(_scaled_column_width(col.width))
+			sticky_left += float(_column_display_width(col))
+		natural_left += float(_column_display_width(col))
 		row_cells.append(wrapped_cell)
 
 	_sync_panel_row_min_height(row_cells)
@@ -568,6 +568,16 @@ static func _scaled_row_number_width() -> int:
 
 static func _scaled_column_width(width: int) -> int:
 	return GRDTheme.scaled_int(width)
+
+
+static func _column_display_width(col: Dictionary) -> int:
+	return max(_scaled_column_width(int(col.get("width", _DEFAULT_COL_WIDTH))), header_text_width(String(col.get("display", ""))))
+
+
+static func header_text_width(text: String) -> int:
+	var font: Font = ThemeDB.fallback_font
+	var text_width: float = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, GRDTheme.font_size()).x
+	return int(ceil(text_width + GRDTheme.scaled(12.0)))
 
 
 static func _column_type_text(col: Dictionary) -> String:
