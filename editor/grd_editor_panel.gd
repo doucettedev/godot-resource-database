@@ -660,9 +660,16 @@ func _apply_table_rows_change(
 	rows: Array[Resource],
 	selected_resource: Resource,
 	status_text: String,
+	scroll_to_bottom: bool = false,
 ) -> void:
 	if table_asset == null:
 		return
+	if scroll_to_bottom and table_asset == _selected_table_asset and not _search_edit.text.strip_edges().is_empty():
+		_search_edit.clear()
+	if scroll_to_bottom and table_asset == _selected_table_asset:
+		_spreadsheet.request_bottom_scroll()
+	else:
+		_spreadsheet.cancel_bottom_scroll()
 	_set_table_rows(table_asset, rows)
 	_mark_table_asset_changed(table_asset)
 	_mark_database_dirty()
@@ -873,9 +880,8 @@ func _on_cell_changed(row_index: int, key: StringName, new_value: Variant) -> vo
 			id_field = &"id"
 		if key == id_field:
 			_rebuild_database()
-			_refresh_spreadsheet()
-			_update_button_states()
 			_try_restore_selection_after_id_change(row_index)
+			_update_button_states()
 		else:
 			# Do not rebuild the spreadsheet during resource picker commits: it can
 			# replace the active picker before Godot finishes applying the resource,
@@ -1247,8 +1253,8 @@ func _on_add_row_pressed() -> void:
 			after_rows,
 			new_row,
 			add_status,
+			true,
 		)
-		_undo_redo.add_do_method(new_row, "emit_changed")
 		_undo_redo.add_undo_method(
 			self,
 			"_apply_table_rows_change",
@@ -1259,8 +1265,7 @@ func _on_add_row_pressed() -> void:
 		)
 		_undo_redo.commit_action()
 	else:
-		_apply_table_rows_change(_selected_table_asset, after_rows, new_row, add_status)
-		new_row.emit_changed()
+		_apply_table_rows_change(_selected_table_asset, after_rows, new_row, add_status, true)
 
 
 func _create_new_row_resource() -> Resource:

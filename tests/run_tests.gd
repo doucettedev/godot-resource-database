@@ -97,6 +97,7 @@ func _run_all_tests() -> void:
 	_test_resource_cell_editor_scalar()
 	_test_resource_cell_editor_bool()
 	_test_resource_cell_editor_enum()
+	_test_resource_cell_editor_explicit_integer_enum()
 	_test_resource_cell_editor_resource_ref()
 	_test_resource_cell_editor_array()
 	_test_spreadsheet_long_header_width()
@@ -1033,6 +1034,23 @@ func _test_resource_cell_editor_enum() -> void:
 	var opt: OptionButton = ctrl as OptionButton
 	_assert_eq(opt.item_count, 4, "Enum has 4 items")
 	_assert_eq(opt.selected, 0, "Enum defaults to first item (common)")
+
+
+func _test_resource_cell_editor_explicit_integer_enum() -> void:
+	print("\n[ResourceCellEditor: explicit integer enum]")
+	var enum_col := GRDColumn.new()
+	enum_col.name = &"enemy_type"
+	enum_col.type = TYPE_INT
+	enum_col.hint = PROPERTY_HINT_ENUM
+	enum_col.hint_string = "Any:-1,Easy,Boss:3,AfterBoss"
+	var ctrl := GRDCellEditorFactory.create_cell_editor(enum_col, -1, null, func(_v: Variant) -> void: pass)
+	var opt: OptionButton = ctrl as OptionButton
+	_assert_eq(opt.get_item_text(0), "Any", "Explicit enum strips value from label")
+	_assert_eq(opt.get_item_metadata(0), -1, "Explicit enum stores integer metadata")
+	_assert_eq(opt.get_item_metadata(1), 0, "Implicit enum starts at zero")
+	_assert_eq(opt.get_item_metadata(2), 3, "Explicit enum value is preserved")
+	_assert_eq(opt.get_item_metadata(3), 4, "Implicit enum increments after explicit value")
+	_assert_eq(opt.selected, 0, "Explicit integer enum selects current value")
 
 
 func _test_resource_cell_editor_resource_ref() -> void:

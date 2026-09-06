@@ -70,6 +70,8 @@ var _selected_filtered_idx: int = -1
 var _property_columns: Array[GRDColumn] = []
 var _database_asset: GRDDatabaseAsset = null
 var _rebuild_generation: int = 0
+var _pending_bottom_table: GRDTableAsset = null
+var _pending_bottom_generation: int = -1
 
 # Cell panel references grouped by filtered row for selection highlighting.
 var _row_panels: Array[Array] = []
@@ -100,6 +102,11 @@ var _sticky_cells: Array[Dictionary] = []
 
 func _ready() -> void:
 	_build_ui()
+
+
+func _exit_tree() -> void:
+	_rebuild_generation += 1
+	cancel_bottom_scroll()
 
 
 func _build_ui() -> void:
@@ -146,10 +153,13 @@ func set_data(
 	property_columns: Array[GRDColumn] = [],
 	database_asset: GRDDatabaseAsset = null,
 ) -> void:
+	var same_table: bool = _table_asset == table_asset and _database_asset == database_asset
 	_columns = columns
 	_rows = rows
 	_table_asset = table_asset
 	_property_columns = property_columns
+	if not same_table:
+		cancel_bottom_scroll()
 	_database_asset = database_asset
 	_id_field = &"id"
 	if table_asset != null and table_asset.id_field != &"":
@@ -163,6 +173,7 @@ func set_data(
 ## Updates the visible-cell search filter and rebuilds.
 func set_search(query: String) -> void:
 	_search_text = query.strip_edges().to_lower()
+	cancel_bottom_scroll()
 	_rebuild_grid()
 
 
@@ -186,6 +197,32 @@ func set_add_row_enabled(enabled: bool) -> void:
 ## Rebuilds the grid from current data.
 func refresh() -> void:
 	_rebuild_grid()
+
+
+func request_bottom_scroll() -> void:
+	_pending_bottom_table = _table_asset
+	_pending_bottom_generation = _rebuild_generation + 1
+
+
+func cancel_bottom_scroll() -> void:
+	_pending_bottom_table = null
+	_pending_bottom_generation = -1
+
+
+func _consume_bottom_scroll(rebuild_generation: int) -> void:
+	if _pending_bottom_generation != rebuild_generation or _pending_bottom_table != _table_asset:
+		return
+	_pending_bottom_table = null
+	_pending_bottom_generation = -1
+	call_deferred("_scroll_to_bottom_after_layout", rebuild_generation)
+
+
+func _scroll_to_bottom_after_layout(rebuild_generation: int) -> void:
+	if not is_inside_tree() or _body_scroll == null or rebuild_generation != _rebuild_generation:
+		return
+	await get_tree().process_frame
+	if is_inside_tree() and rebuild_generation == _rebuild_generation:
+		_body_scroll.get_v_scroll_bar().value = _body_scroll.get_v_scroll_bar().max_value
 
 
 ## Re-syncs row panel minimum heights from current cell content sizes.
@@ -215,6 +252,7 @@ func _deferred_sync_all_row_heights() -> void:
 
 ## Clears all data and UI.
 func clear() -> void:
+	cancel_bottom_scroll()
 	_columns.clear()
 	_rows.clear()
 	_filtered_indices.clear()
@@ -252,6 +290,7 @@ func _rebuild_grid() -> void:
 	var header_ms: int = Time.get_ticks_msec() - header_start_ms
 
 	if _filtered_indices.is_empty():
+		_consume_bottom_scroll(rebuild_generation)
 		call_deferred("_refresh_sticky_cell_positions")
 		return
 
@@ -280,6 +319,7 @@ func _build_rows_chunked(rebuild_generation: int, rows_start_ms: int, profile_st
 	# baseline (_ROW_MIN_HEIGHT floor); this corrects it.
 	call_deferred("_deferred_sync_all_row_heights")
 	call_deferred("_refresh_sticky_cell_positions")
+	_consume_bottom_scroll(rebuild_generation)
 
 	var rows_ms: int = Time.get_ticks_msec() - rows_start_ms
 	var total_ms: int = Time.get_ticks_msec() - profile_start_ms

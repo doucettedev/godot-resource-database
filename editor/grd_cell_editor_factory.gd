@@ -234,21 +234,23 @@ static func _create_string_editor(col: GRDColumn, value: Variant, on_change: Cal
 	edit.text_changed.connect(func(_new_text: String) -> void:
 		_sync_line_edit_tooltip(edit)
 	)
-	var submit := func(new_text: String) -> void:
-		if col.type == TYPE_STRING_NAME:
-			on_change.call(StringName(new_text))
-		else:
-			on_change.call(new_text)
-		edit.release_focus()
-	edit.text_submitted.connect(submit)
-	edit.focus_exited.connect(func() -> void:
+	var last_committed: Array[String] = [str(value) if value != null else ""]
+	var commit := func() -> void:
 		var current: String = edit.text
-		var prev: String = str(value) if value != null else ""
-		if current != prev:
-			if col.type == TYPE_STRING_NAME:
-				on_change.call(StringName(current))
-			else:
-				on_change.call(current)
+		if current == last_committed[0]:
+			return
+		last_committed[0] = current
+		if col.type == TYPE_STRING_NAME:
+			on_change.call(StringName(current))
+		else:
+			on_change.call(current)
+	edit.text_submitted.connect(func(_new_text: String) -> void:
+		commit.call()
+		if is_instance_valid(edit) and edit.is_inside_tree():
+			edit.release_focus()
+	)
+	edit.focus_exited.connect(func() -> void:
+		commit.call()
 	)
 	return edit
 
@@ -376,30 +378,47 @@ static func _sync_file_path_tooltip(edit: LineEdit, col: GRDColumn, stored_value
 # Enum editor
 # ---------------------------------------------------------------------------
 
+static func _enum_options(col: GRDColumn) -> Array[Dictionary]:
+	var options: Array[Dictionary] = []
+	var next_value: int = 0
+	for entry in col.get_enum_values():
+		var label: String = entry
+		var value: Variant = entry
+		if col.type == TYPE_INT:
+			var parts: PackedStringArray = entry.split(":", false, 1)
+			label = parts[0]
+			if parts.size() > 1 and parts[1].is_valid_int():
+				next_value = int(parts[1])
+			value = next_value
+			next_value += 1
+		options.append({"label": label, "value": value})
+	return options
+
+
 static func _create_enum_editor(col: GRDColumn, value: Variant, on_change: Callable) -> Control:
-	var opts: PackedStringArray = col.get_enum_values()
+	var opts: Array[Dictionary] = _enum_options(col)
 	var option: OptionButton = OptionButton.new()
 	option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	option.custom_minimum_size.y = _compact_control_height()
 
-	var current_str: String = str(value) if value != null else ""
+	var current_value: Variant = value
 	var selected_idx: int = 0
 	var found_match: bool = false
 
-	for j in opts.size():
+	for opt_data in opts:
 		var opt_idx: int = option.get_item_count()
-		_add_text_option(option, opts[j], opt_idx)
-		option.set_item_metadata(opt_idx, opts[j])
-		if opts[j] == current_str:
+		_add_text_option(option, opt_data.label, opt_idx)
+		option.set_item_metadata(opt_idx, opt_data.value)
+		if opt_data.value == current_value:
 			selected_idx = opt_idx
 			found_match = true
 
-	# If current value is non-empty but not in options, append it so data is not lost.
-	if current_str != "" and not found_match:
+	# If current value is not in options, append it so data is not lost.
+	if current_value != null and not found_match:
 		var opt_idx: int = option.get_item_count()
-		_add_text_option(option, "%s (custom)" % current_str, opt_idx)
-		option.set_item_metadata(opt_idx, current_str)
+		_add_text_option(option, "%s (custom)" % current_value, opt_idx)
+		option.set_item_metadata(opt_idx, current_value)
 		selected_idx = opt_idx
 
 	option.selected = selected_idx
@@ -1761,28 +1780,27 @@ static func _create_structured_enum_editor(
 	elem: Resource, col: GRDColumn, prop_name: String, current_value: Variant,
 	on_element_changed: Callable = Callable(),
 ) -> Control:
-	var opts: PackedStringArray = col.get_enum_values()
+	var opts: Array[Dictionary] = _enum_options(col)
 	var option: OptionButton = OptionButton.new()
 	option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	option.custom_minimum_size.y = _compact_control_height()
 
-	var current_str: String = str(current_value) if current_value != null else ""
 	var selected_idx: int = 0
 	var found_match: bool = false
 
-	for j in opts.size():
+	for opt_data in opts:
 		var opt_idx: int = option.get_item_count()
-		_add_text_option(option, opts[j], opt_idx)
-		option.set_item_metadata(opt_idx, opts[j])
-		if opts[j] == current_str:
+		_add_text_option(option, opt_data.label, opt_idx)
+		option.set_item_metadata(opt_idx, opt_data.value)
+		if opt_data.value == current_value:
 			selected_idx = opt_idx
 			found_match = true
 
-	if current_str != "" and not found_match:
+	if current_value != null and not found_match:
 		var opt_idx: int = option.get_item_count()
-		_add_text_option(option, "%s (custom)" % current_str, opt_idx)
-		option.set_item_metadata(opt_idx, current_str)
+		_add_text_option(option, "%s (custom)" % current_value, opt_idx)
+		option.set_item_metadata(opt_idx, current_value)
 		selected_idx = opt_idx
 
 	option.selected = selected_idx
